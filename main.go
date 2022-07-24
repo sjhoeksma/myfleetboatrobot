@@ -741,6 +741,13 @@ func writeJson(data BookingSlice) {
 	}
 }
 
+func allowOrigin(origin string) (bool, error) {
+	// In this example we use a regular expression but we can imagine various
+	// kind of custom logic. For example, an external datasource could be used
+	// to maintain the list of allowed origins.
+	return true, nil //regexp.MatchString(`^https:\/\/labstack\.(net|com)$`, origin)
+}
+
 func jsonServer() {
 	e := echo.New()
 	if jsonProtect {
@@ -751,6 +758,11 @@ func jsonServer() {
 			return false, nil
 		}))
 	}
+
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOriginFunc: allowOrigin,
+		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
+	}))
 
 	e.GET("/booking", func(c echo.Context) error {
 		bookings := readJson()
@@ -795,6 +807,7 @@ func jsonServer() {
 		updated_booking := new(BookingInterface)
 		err := c.Bind(updated_booking)
 		if err != nil {
+			log.Error(err, updated_booking)
 			return c.String(http.StatusBadRequest, "Bad request.")
 		}
 
@@ -829,16 +842,8 @@ func jsonServer() {
 	e.Start(bindAddress)
 }
 
-func main() {
-	//log.SetFormatter(&log.JSONFormatter{})
-
-	Init()
-
-	if !singleRun {
-		jsonServer()
-		log.Println("Json Server started on ", bindAddress)
-	}
-
+func bookLoop() {
+	log.Println("Start processing")
 	var changed bool = false
 	//Timing loop
 	for {
@@ -847,6 +852,7 @@ func main() {
 		for i, booking := range bookingSlice {
 			//Check if have allready processed the booking, if so skip it
 			if booking.State == "Finished" || booking.State == "Canceled" || booking.State == "Failed" {
+				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
 				continue
 			}
 			//Step 0: Data convertions
@@ -926,5 +932,17 @@ func main() {
 		//We sleep before we restart,
 		//TODO: align it on the 0,15,30,45 min mark
 		time.Sleep(time.Minute * time.Duration(sleepInterval))
+		//log.Println("Awake from Sleep")
+	}
+}
+
+func main() {
+	Init()
+	if !singleRun {
+		go bookLoop()
+		jsonServer()
+		log.Println("Json Server started on ", bindAddress)
+	} else {
+		bookLoop()
 	}
 }
