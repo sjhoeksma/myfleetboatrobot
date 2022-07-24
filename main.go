@@ -118,6 +118,7 @@ var commentPrefix string = "#:"
 var bindAddress string = ":1323"
 var jsonUser string = "admin"
 var jsonPwd string = "admin"
+var jsonProtect bool = true
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -148,6 +149,9 @@ func Init() {
 	setEnvValue("JSONPWD", &jsonPwd)
 	setEnvValue("PREFIX", &commentPrefix)
 	setEnvValue("TIMEZONE", &timeZone)
+	var s = ""
+	setEnvValue("JSONPROTECT", &s)
+	jsonProtect, _ = strconv.ParseBool(s)
 
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
@@ -739,12 +743,14 @@ func writeJson(data BookingSlice) {
 
 func jsonServer() {
 	e := echo.New()
-	e.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
-		if username == jsonUser && password == jsonPwd {
-			return true, nil
-		}
-		return false, nil
-	}))
+	if jsonProtect {
+		e.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+			if username == jsonUser && password == jsonPwd {
+				return true, nil
+			}
+			return false, nil
+		}))
+	}
 
 	e.GET("/booking", func(c echo.Context) error {
 		bookings := readJson()
