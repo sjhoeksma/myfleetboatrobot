@@ -79,7 +79,7 @@ var maandFilter = map[string]string{
 
 //Struc used to store boat and session info
 type BookingInterface struct {
-	Id         int            `json:"id"`
+	Id         int64          `json:"id"`
 	Name       string         `json:"boat"`
 	Date       string         `json:"date"`
 	Time       string         `json:"time"`
@@ -756,7 +756,7 @@ func jsonServer() {
 		bookings := readJson()
 
 		for _, booking := range bookings {
-			if c.Param("id") == strconv.Itoa(booking.Id) {
+			if c.Param("id") == strconv.FormatInt(booking.Id, 10) {
 				return c.JSON(http.StatusOK, booking)
 			}
 		}
@@ -765,8 +765,13 @@ func jsonServer() {
 
 	e.POST("/booking", func(c echo.Context) error {
 		bookings := readJson()
-
+		//Autoincrement booking id
+		var id int64 = 0
+		for _, booking := range bookings {
+			id = MaxInt64(id, booking.Id)
+		}
 		new_booking := new(BookingInterface)
+		new_booking.Id = id
 		err := c.Bind(new_booking)
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Bad request.")
@@ -788,7 +793,7 @@ func jsonServer() {
 		}
 
 		for i, booking := range bookings {
-			if strconv.Itoa(booking.Id) == c.Param("id") {
+			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				bookings = append(bookings[:i], bookings[i+1:]...)
 				bookings = append(bookings, *updated_booking)
 
@@ -805,7 +810,7 @@ func jsonServer() {
 		bookings := readJson()
 
 		for i, booking := range bookings {
-			if strconv.Itoa(booking.Id) == c.Param("id") {
+			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				bookings = append(bookings[:i], bookings[i+1:]...)
 				writeJson(bookings)
 
