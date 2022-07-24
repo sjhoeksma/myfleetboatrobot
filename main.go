@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,7 +23,7 @@ import (
 var Version = "0.0.1"
 
 var baseUrl = "https://my-fleet.eu/R1B34/mobile/index0.php?&system=mobile&language=NL"
-var bookingFile = "booking.json"
+var bookingFile = "json/booking.json"
 var timeZone = "+02:00"
 var minDuration = 60 //The minimal duration required to book
 
@@ -689,11 +690,14 @@ func login(booking *BookingInterface) error {
 }
 
 func readJson() BookingSlice {
+	b := BookingSlice{}
+	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
 	file, err := ioutil.ReadFile(bookingFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	b := BookingSlice{}
 	err = json.Unmarshal(file, &b)
 	if err != nil {
 		log.Fatal(err)
@@ -702,8 +706,14 @@ func readJson() BookingSlice {
 }
 
 func writeJson(data BookingSlice) {
+	if _, err := os.Stat(bookingFile); os.IsNotExist(err) {
+		err := os.MkdirAll(filepath.Dir(bookingFile), 0644) // Create your file
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	json_to_file, _ := json.Marshal(data)
-	err := ioutil.WriteFile(bookingFile, json_to_file, 4)
+	err := ioutil.WriteFile(bookingFile, json_to_file, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -798,12 +808,7 @@ func main() {
 	//Timing loop
 	for {
 		//TODO: We should read it from file or json url
-		var bookingSlice BookingSlice
-		b, _ := ioutil.ReadFile(bookingFile)
-		err := json.Unmarshal(b, &bookingSlice)
-		if err != nil {
-			log.Fatal("could not load ", bookingFile)
-		}
+		bookingSlice := readJson()
 		for i, booking := range bookingSlice {
 			//Check if have allready processed the booking, if so skip it
 			if booking.State == "Finished" || booking.State == "Canceled" || booking.State == "Failed" {
@@ -866,8 +871,7 @@ func main() {
 
 		//Save the change to the bookingFile on changed data
 		if changed {
-			file, _ := json.MarshalIndent(bookingSlice, "", " ")
-			_ = ioutil.WriteFile(bookingFile, file, 0644)
+			writeJson(bookingSlice)
 		}
 
 		//Exit if we are in single run mode
