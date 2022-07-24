@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,8 +16,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/labstack/echo/middleware"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -741,9 +740,7 @@ func writeJson(data BookingSlice) {
 func jsonServer() {
 	e := echo.New()
 	e.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
-		// Be careful to use constant time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(username), []byte(jsonUser)) == 1 &&
-			subtle.ConstantTimeCompare([]byte(password), []byte(jsonPwd)) == 1 {
+		if username == jsonUser && password == jsonPwd {
 			return true, nil
 		}
 		return false, nil
@@ -781,7 +778,7 @@ func jsonServer() {
 		return c.JSON(http.StatusOK, bookings)
 	})
 
-	e.PUT("/magazines/:id", func(c echo.Context) error {
+	e.PUT("/booking/:id", func(c echo.Context) error {
 		bookings := readJson()
 
 		updated_booking := new(BookingInterface)
