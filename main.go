@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/labstack/echo/middleware"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )
@@ -25,7 +27,8 @@ var Version = "0.0.1"
 var baseUrl = "https://my-fleet.eu/R1B34/mobile/index0.php?&system=mobile&language=NL"
 var bookingFile = "json/booking.json"
 var timeZone = "+02:00"
-var minDuration = 60 //The minimal duration required to book
+var minDuration = 60  //The minimal duration required to book
+var maxDuration = 150 //The maximal duration allowed to book
 
 var boatFilter = map[string]string{
 	"Alle boten": "0",
@@ -114,6 +117,8 @@ var singleRun bool = true
 var sleepInterval int = 5
 var commentPrefix string = "#:"
 var bindAddress string = ":1323"
+var jsonUser string = "admin"
+var jsonPwd string = "admin"
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -131,13 +136,27 @@ func MaxInt64(a, b int64) int64 {
 	return b
 }
 
+func setEnvValue(key string, item *string) {
+	s := os.Getenv(key)
+	if s != "" {
+		*item = s
+	}
+}
+
 //Read and set settings
 func Init() {
+	setEnvValue("JSONUSER", &jsonUser)
+	setEnvValue("JSONPWD", &jsonPwd)
+	setEnvValue("PREFIX", &commentPrefix)
+	setEnvValue("TIMEZONE", &timeZone)
+
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
 	flag.StringVar(&commentPrefix, "prefix", commentPrefix, "Comment prefix")
 	flag.StringVar(&timeZone, "timezone", timeZone, "The timezone used by user")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
+	flag.StringVar(&jsonUser, "jsonUser", jsonUser, "The user to protect jsondata")
+	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.Parse() // after declaring flags we need to call it
 	if *version {
 		log.Println("Version ", Version)
@@ -721,6 +740,14 @@ func writeJson(data BookingSlice) {
 
 func jsonServer() {
 	e := echo.New()
+	e.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+		// Be careful to use constant time comparison to prevent timing attacks
+		if subtle.ConstantTimeCompare([]byte(username), []byte(jsonUser)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(password), []byte(jsonPwd)) == 1 {
+			return true, nil
+		}
+		return false, nil
+	}))
 
 	e.GET("/booking", func(c echo.Context) error {
 		bookings := readJson()
@@ -832,6 +859,16 @@ func main() {
 				log.Error("time not valid hh:mm")
 				continue
 			}
+
+			//Set the minimal duration
+			if booking.Duration < int64(minDuration) {
+				booking.Duration = int64(minDuration)
+			}
+			//Set the maximal duration
+			if booking.Duration > int64(maxDuration) {
+				booking.Duration = int64(maxDuration)
+			}
+
 			booking.EpochStart = thetime.Unix()
 			thetime = thetime.Add(time.Minute * time.Duration(booking.Duration))
 			booking.EpochEnd = thetime.Unix()
