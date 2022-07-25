@@ -613,7 +613,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	boatList, err := boatSearch(b)
 	if err != nil {
 		b.State = "Failed"
-		b.Comment = err.Error()
 		return true, err
 	}
 	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
@@ -621,7 +620,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	if boatList.EpochDate < b.EpochDate {
 		//log.Println("Date not valid yet", boatList.EpochDate, b.EpochDate)
 		if b.State != "Waiting" {
-			b.Comment = "Date not valid yet"
+			b.Message = "Date not valid yet"
 			b.State = "Waiting"
 			return true, nil
 		}
@@ -636,7 +635,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	if endtime-starttime < int64(minDuration*60) || starttime < boatList.SunRise {
 		//log.Println("Booking not yet possible", starttime, endtime, boatList.SunRise)
 		if b.State != "Waiting" {
-			b.Comment = "Date not valid yet"
+			b.Message = "Date not valid yet"
 			b.State = "Waiting"
 			return true, nil
 		}

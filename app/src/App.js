@@ -17,10 +17,14 @@ const App = () => {
 
   let columns = [
     { title: 'Id', field: 'id', hidden: true },
-    { title: 'Boot', field: 'boat' },
+    { title: 'Boot', field: 'boat'
+     //, lookup: {"lynx": "Lynx", "sneep": "Sneep"}
+    },
     { title: 'Datum', field: 'date' ,  type : 'date'},
-    { title: 'Tijd', field: 'time', sorting :false, type : 'time'  },
-    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90 },
+    { title: 'Tijd', field: 'time', sorting :false, type : 'time', 
+      render: (rowData) => (rowData.time.substring(11,16)) },
+    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
+      lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
     { title: 'Gebruiker', field: 'user' },
     { title: 'Password', field: 'password', sorting :false  },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
@@ -63,9 +67,12 @@ const App = () => {
     }
     if (!('duration' in newData) || newData.duration === "") {
       errorList.push("Try Again, You didn't enter the Duration field")
+    } else {
+      newData.duration = parseInt(newData.duration)
     }
 
     if (errorList.length < 1) {
+
       axios.put(`${url}/${newData.id}`, newData)
         .then(response => {
           const data = response.data;
@@ -129,7 +136,10 @@ const App = () => {
     }
     if (!('duration' in newData) || newData.duration === "") {
       errorList.push("Try Again, You didn't enter the Duration field")
+    } else {
+      newData.duration = parseInt(newData.duration)
     }
+
     if (errorList.length < 1) {
       axios.post(`${url}`, newData)
         .then(response => {
