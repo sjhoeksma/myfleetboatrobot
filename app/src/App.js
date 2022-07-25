@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Alert, AlertTitle } from '@material-ui/lab';
 
 var url = "http://localhost:1323/booking"
-if (process.env.NODE_ENV == 'production') {
+if (process.env.NODE_ENV === 'production') {
   url = "/booking"
 }
 
@@ -16,10 +16,11 @@ const App = () => {
   const [errorMessages, setErrorMessages] = useState([]);
 
   let columns = [
+    { title: 'Id', field: 'id', hidden: true },
     { title: 'Boot', field: 'boat' },
-    { title: 'Datum', field: 'date' },
-    { title: 'Tijd', field: 'time', sorting :false  },
-    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false  },
+    { title: 'Datum', field: 'date' ,  type : 'date'},
+    { title: 'Tijd', field: 'time', sorting :false, type : 'time'  },
+    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90 },
     { title: 'Gebruiker', field: 'user' },
     { title: 'Password', field: 'password', sorting :false  },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
@@ -39,114 +40,114 @@ const App = () => {
 
 
   //function for updating the existing row details
-  const handleRowUpdate = (newData, oldData, resolve) => {
+  const handleRowUpdate = (newData, oldData, resolve,reject) => {
     //validating the data inputs
     let errorList = []
-    if (newData.password === "") {
+    if (!('password' in newData) || newData.password === "") {
       errorList.push("Try Again, You didn't enter the Password field")
     }
-    if (newData.user === "") {
+    if (!('user' in newData) || newData.user === "") {
       errorList.push("Try Again, You didn't enter the User field")
+    } else  {
+     newData.user = newData.user.toUpperCase() 
     }
-    if (newData.boat === "") {
+    if (!('boat' in newData) || newData.boat === "") {
       errorList.push("Try Again, You didn't enter the Boat field")
     }
-    if (newData.date === "") {
-      errorList.push("Try Again, You didn't enter the Date field")
+    if (!('date' in newData) || newData.date === "") {
+      errorList.push("Try Again, You didn't enter a valid Date field")
     }
-    if (newData.time === "") {
-      errorList.push("Try Again, You didn't enter the Time field")
+
+    if (!('time' in newData) || newData.time === "" ) {
+      errorList.push("Try Again, You didn't enter a valid  Time field")
     }
-    if (newData.duration === "") {
+    if (!('duration' in newData) || newData.duration === "") {
       errorList.push("Try Again, You didn't enter the Duration field")
     }
-   newData.user = newData.user.toUpperCase() 
 
     if (errorList.length < 1) {
       axios.put(`${url}/${newData.id}`, newData)
         .then(response => {
           const data = response.data;
           setBooking(data);
-          resolve()
           setIserror(false)
           setErrorMessages([])
+          resolve()
         })
         .catch(error => {
           setErrorMessages(["Update failed! Server error"])
           setIserror(true)
-          resolve()
-
+          reject()
         })
     } else {
       setErrorMessages(errorList)
       setIserror(true)
-      resolve()
-
+      reject()
     }
   }
 
 
   //function for deleting a row
-  const handleRowDelete = (oldData, resolve) => {
+  const handleRowDelete = (oldData, resolve,reject) => {
+    console.log("delete",oldData)
     axios.delete(`${url}/${oldData.id}`)
       .then(response => {
         const data = response.data;
         setBooking(data);
-        resolve()
         setIserror(false)
         setErrorMessages([])
+        resolve()
       })
       .catch(error => {
         setErrorMessages(["Delete failed! Server error"])
         setIserror(true)
-        resolve()
+        reject()
       })
   }
 
 
   //function for adding a new row to the table
-  const handleRowAdd = (newData, resolve) => {
+  const handleRowAdd = (newData, resolve, reject) => {
     //validating the data inputs
     let errorList = []
-    if (newData.password === "") {
+    if (!('password' in newData) || newData.password === "") {
       errorList.push("Try Again, You didn't enter the Password field")
     }
-    if (newData.user === "") {
+    if (!('user' in newData) || newData.user === "") {
       errorList.push("Try Again, You didn't enter the User field")
+    } else  {
+     newData.user = newData.user.toUpperCase() 
     }
-    if (newData.boat === "") {
+    if (!('boat' in newData) || newData.boat === "") {
       errorList.push("Try Again, You didn't enter the Boat field")
     }
-    if (newData.date === "") {
+    if (!('date' in newData) || newData.date === "") {
       errorList.push("Try Again, You didn't enter the Date field")
     }
-    if (newData.time === "") {
+    if (!('time' in newData) || newData.time === "") {
       errorList.push("Try Again, You didn't enter the Time field")
     }
-    if (newData.duration === "") {
+    if (!('duration' in newData) || newData.duration === "") {
       errorList.push("Try Again, You didn't enter the Duration field")
     }
-
-    newData.user = newData.user.toUpperCase() 
-
     if (errorList.length < 1) {
       axios.post(`${url}`, newData)
         .then(response => {
           const data = response.data;
           setBooking(data);
-          resolve()
           setErrorMessages([])
           setIserror(false)
+          resolve()
         })
         .catch(error => {
           setErrorMessages(["Cannot add data. Server error!"])
           setIserror(true)
-          resolve()
+          reject()
         })
     } else {
       setErrorMessages(errorList)
       setIserror(true)
-      resolve()
+      reject()
     }
   }
 
@@ -166,18 +167,29 @@ const App = () => {
         }}
         editable={{
           onRowUpdate: (newData, oldData) =>
-            new Promise((resolve) => {
-              handleRowUpdate(newData, oldData, resolve);
-
+            new Promise((resolve,reject) => {
+              handleRowUpdate(newData, oldData, resolve,reject);
             }),
           onRowAdd: (newData) =>
-            new Promise((resolve) => {
-              handleRowAdd(newData, resolve)
+            new Promise((resolve,reject) => {
+              handleRowAdd(newData, resolve,reject)
             }),
           onRowDelete: (oldData) =>
-            new Promise((resolve) => {
-              handleRowDelete(oldData, resolve)
+            new Promise((resolve,reject) => {
+              handleRowDelete(oldData, resolve,reject)
             }),
+          onRowAddCancelled: (rowData) =>
+            new Promise((resolve,reject) => {
+              setErrorMessages([])
+              setIserror(false)
+              resolve()
+          }),
+          onRowUpdateCancelled: (rowData) =>
+            new Promise((resolve,reject) => {
+              setErrorMessages([])
+              setIserror(false)
+              resolve()
+          }),
         }}
       />
 
