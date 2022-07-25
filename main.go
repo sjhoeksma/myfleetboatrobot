@@ -829,8 +829,14 @@ func jsonServer() {
 
 		for i, booking := range bookings {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
-				bookings = append(bookings[:i], bookings[i+1:]...)
-				writeJson(bookings)
+				if booking.State == "Moving" {
+					booking.State = "Cancel"
+					bookings[i] = booking
+					writeJson(bookings)
+				} else if booking.State != "Cancel" {
+					bookings = append(bookings[:i], bookings[i+1:]...)
+					writeJson(bookings)
+				}
 
 				return c.JSON(http.StatusOK, bookings)
 			}

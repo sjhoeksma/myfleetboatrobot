@@ -16,7 +16,7 @@ const App = () => {
   const [errorMessages, setErrorMessages] = useState([]);
 
   let columns = [
-    { title: 'Boot', field: 'boat' , editable : 'onAdd'},
+    { title: 'Boot', field: 'boat' },
     { title: 'Datum', field: 'date' },
     { title: 'Tijd', field: 'time', sorting :false  },
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false  },
@@ -32,7 +32,7 @@ const App = () => {
       .then(res => {
         const booking = res.data;
         setBooking(booking);
-         console.log(booking);
+        // console.log(booking);
       })
   }, [])
 
@@ -42,31 +42,31 @@ const App = () => {
   const handleRowUpdate = (newData, oldData, resolve) => {
     //validating the data inputs
     let errorList = []
-    /*
-    if (newData.name === "") {
-      errorList.push("Try Again, You didn't enter the name field")
+    if (newData.password === "") {
+      errorList.push("Try Again, You didn't enter the Password field")
     }
-    if (newData.username === "") {
-      errorList.push("Try Again, You didn't enter the Username field")
+    if (newData.user === "") {
+      errorList.push("Try Again, You didn't enter the User field")
     }
-    if (newData.email === "" || validateEmail(newData.email) === false) {
-      errorList.push("Oops!!! Please enter a valid email")
+    if (newData.boat === "") {
+      errorList.push("Try Again, You didn't enter the Boat field")
     }
-    if (newData.phone === "") {
-      errorList.push("Try Again, Phone number field can't be blank")
+    if (newData.date === "") {
+      errorList.push("Try Again, You didn't enter the Date field")
     }
-    if (newData.website === "") {
-      errorList.push("Try Again, Enter website url before submitting")
+    if (newData.time === "") {
+      errorList.push("Try Again, You didn't enter the Time field")
     }
-    */
+    if (newData.duration === "") {
+      errorList.push("Try Again, You didn't enter the Duration field")
+    }
+   newData.user = newData.user.toUpperCase() 
 
     if (errorList.length < 1) {
       axios.put(`${url}/${newData.id}`, newData)
         .then(response => {
-          const data= [...booking];
-          const index = oldData.tableData.id;
-          data[index] = newData;
-          setBooking([...data]);
+          const data = response.data;
+          setBooking(data);
           resolve()
           setIserror(false)
           setErrorMessages([])
@@ -90,11 +90,11 @@ const App = () => {
   const handleRowDelete = (oldData, resolve) => {
     axios.delete(`${url}/${oldData.id}`)
       .then(response => {
-        const data = [...booking];
-        const index = oldData.tableData.id;
-        data.splice(index, 1);
-        setBooking([...data]);
+        const data = response.data;
+        setBooking(data);
         resolve()
+        setIserror(false)
+        setErrorMessages([])
       })
       .catch(error => {
         setErrorMessages(["Delete failed! Server error"])
@@ -108,29 +108,31 @@ const App = () => {
   const handleRowAdd = (newData, resolve) => {
     //validating the data inputs
     let errorList = []
-    /*
-    if (newData.name === "") {
-      errorList.push("Try Again, You didn't enter the name field")
+    if (newData.password === "") {
+      errorList.push("Try Again, You didn't enter the Password field")
     }
-    if (newData.username === "") {
-      errorList.push("Try Again, You didn't enter the Username field")
+    if (newData.user === "") {
+      errorList.push("Try Again, You didn't enter the User field")
     }
-    if (newData.email === "" || validateEmail(newData.email) === false) {
-      errorList.push("Oops!!! Please enter a valid email")
+    if (newData.boat === "") {
+      errorList.push("Try Again, You didn't enter the Boat field")
     }
-    if (newData.phone === "") {
-      errorList.push("Try Again, Phone number field can't be blank")
+    if (newData.date === "") {
+      errorList.push("Try Again, You didn't enter the Date field")
     }
-    if (newData.website === "") {
-      errorList.push("Try Again, Enter website url before submitting")
+    if (newData.time === "") {
+      errorList.push("Try Again, You didn't enter the Time field")
     }
-    */
+    if (newData.duration === "") {
+      errorList.push("Try Again, You didn't enter the Duration field")
+    }
+
+    newData.user = newData.user.toUpperCase() 
 
     if (errorList.length < 1) {
       axios.post(`${url}`, newData)
         .then(response => {
-          let data = [...booking];
-          data.push(newData);
+          const data = response.data;
           setBooking(data);
           resolve()
           setErrorMessages([])
