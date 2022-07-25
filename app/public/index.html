@@ -9,12 +9,27 @@
   <meta name="description" content="table using material-table" />
   <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
-  <title>Table Example</title>
+  <title>Spaarne boot robot</title>
 </head>
 
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
   <div id="root"></div>
+  <script>
+    var time = new Date().getTime();
+$(document.body).bind("mousemove keypress", function(e) {
+    time = new Date().getTime();
+});
+
+function refresh() {
+    if(new Date().getTime() - time >= 5*60000) 
+        window.location.reload(true);
+    else 
+        setTimeout(refresh, 10000);
+}
+
+setTimeout(refresh, 10000);
+  </script>
 </body>
 
 </html>

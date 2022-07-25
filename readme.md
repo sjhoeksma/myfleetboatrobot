@@ -1,8 +1,8 @@
 #
 
 Buidling: **docker build --tag 3pidev/spaarne .**
-docker run -d --name 3pidev/spaarne --restart unless-stopped spaarne:latest
-docker run -d --name 3pidev/spaarne  spaarne:latest
+docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --restart unless-stopped 3pidev/spaarne:latest
+docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne  3pidev/spaarne:latest
 
 
 ## How to find slot

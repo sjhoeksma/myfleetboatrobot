@@ -4,8 +4,10 @@ import './App.css';
 import axios from 'axios';
 import { Alert, AlertTitle } from '@material-ui/lab';
 
-//const url = "https://spaarne.os1.nl/booking"
-const url = "http://localhost:1323/booking"
+var url = "http://localhost:1323/booking"
+if (process.env.NODE_ENV == 'production') {
+  url = "/booking"
+}
 
 const App = () => {
 
@@ -14,15 +16,15 @@ const App = () => {
   const [errorMessages, setErrorMessages] = useState([]);
 
   let columns = [
-    { title: 'BOOT', field: 'boat' , editable : 'onAdd'},
-    { title: 'DATUM', field: 'date' },
-    { title: 'TIJD', field: 'time', sorting :false  },
-    { title: 'MIN', field: 'duration', type : 'numeric', sorting :false  },
-    { title: 'GEBRUIKER', field: 'user' },
-    { title: 'PASSWORD', field: 'password', sorting :false  },
-    { title: 'COMMENTAAR', field: 'comment', editable : 'onAdd', sorting :false  },
-    { title: 'STATUS', field: 'state' },
-    { title: 'MSG', field: 'message', editable : 'never', sorting :false },
+    { title: 'Boot', field: 'boat' , editable : 'onAdd'},
+    { title: 'Datum', field: 'date' },
+    { title: 'Tijd', field: 'time', sorting :false  },
+    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false  },
+    { title: 'Gebruiker', field: 'user' },
+    { title: 'Password', field: 'password', sorting :false  },
+    { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
+    { title: 'Status', field: 'state' },
+    { title: 'Melding', field: 'message', editable : 'never', sorting :false },
   ]
 
   useEffect(() => {
@@ -149,7 +151,7 @@ const App = () => {
 
   return (
     <div className="app">
-      <h1>Spaarne Auto Booking</h1> <br /><br />
+      <h1>Spaarne Boot Robot</h1> <br /><br />
 
       <MaterialTable
         title="Booking Details"
@@ -158,7 +160,7 @@ const App = () => {
         options={{
           headerStyle: { borderBottomColor: 'red', borderBottomWidth: '3px', fontFamily: 'verdana' },
           actionsColumnIndex: -1,
-          pageSize: 14
+          pageSize: 10
         }}
         editable={{
           onRowUpdate: (newData, oldData) =>

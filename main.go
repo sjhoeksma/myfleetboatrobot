@@ -116,9 +116,9 @@ var singleRun bool = true
 var sleepInterval int = 5
 var commentPrefix string = "#:"
 var bindAddress string = ":1323"
-var jsonUser string = "admin"
-var jsonPwd string = "admin"
-var jsonProtect bool = true
+var jsonUser string
+var jsonPwd string
+var jsonProtect bool
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -145,26 +145,25 @@ func setEnvValue(key string, item *string) {
 
 //Read and set settings
 func Init() {
-	setEnvValue("JSONUSER", &jsonUser)
+	setEnvValue("JSONUSR", &jsonUser)
 	setEnvValue("JSONPWD", &jsonPwd)
 	setEnvValue("PREFIX", &commentPrefix)
 	setEnvValue("TIMEZONE", &timeZone)
-	var s = ""
-	setEnvValue("JSONPROTECT", &s)
-	jsonProtect, _ = strconv.ParseBool(s)
 
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
 	flag.StringVar(&commentPrefix, "prefix", commentPrefix, "Comment prefix")
 	flag.StringVar(&timeZone, "timezone", timeZone, "The timezone used by user")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
-	flag.StringVar(&jsonUser, "jsonUser", jsonUser, "The user to protect jsondata")
+	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.Parse() // after declaring flags we need to call it
 	if *version {
 		log.Println("Version ", Version)
 		os.Exit(0)
 	}
+	//Only enable jsonProtection if we have a username and password
+	jsonProtect = (jsonUser != "" && jsonPwd != "")
 }
 
 //Create from the html response a booking array
@@ -838,6 +837,9 @@ func jsonServer() {
 		}
 		return c.String(http.StatusNotFound, "Not found.")
 	})
+
+	//Serve the app
+	e.Static("/", "public")
 
 	e.Start(bindAddress)
 }
