@@ -22,9 +22,9 @@ import (
 )
 
 var Version = "0.0.1"
-
-var baseUrl = "https://my-fleet.eu/R1B34/mobile/index0.php?&system=mobile&language=NL"
+var clubId = "R1B34"
 var bookingFile = "json/booking.json"
+var timeZoneLoc = "Europe/Amsterdam"
 var timeZone = "+02:00"
 var minDuration = 60  //The minimal duration required to book
 var maxDuration = 150 //The maximal duration allowed to book
@@ -120,6 +120,7 @@ var bindAddress string = ":1323"
 var jsonUser string
 var jsonPwd string
 var jsonProtect bool
+var baseUrl string
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -148,15 +149,19 @@ func shortDate(date string) string {
 	return strings.Split(date, "T")[0]
 }
 
-func shortTime(time string) string {
-	if strings.Contains(time, "T") {
-		time = strings.Split(time, "T")[1]
+func shortTime(timeS string) string {
+	if strings.Contains(timeS, "T") {
+		thetime, _ := time.Parse(time.RFC3339, timeS)
+		loc, _ := time.LoadLocation(timeZoneLoc)
+		return thetime.Round(15 * time.Minute).In(loc).Format("15:04")
 	}
-	return time[0:5]
+	thetime, _ := time.Parse(time.RFC3339, "2001-01-01"+"T"+timeS[0:5]+":00")
+	return thetime.Round(15 * time.Minute).Format("15:04")
 }
 
 //Read and set settings
 func Init() {
+
 	setEnvValue("JSONUSR", &jsonUser)
 	setEnvValue("JSONPWD", &jsonPwd)
 	setEnvValue("PREFIX", &commentPrefix)
@@ -165,10 +170,12 @@ func Init() {
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
 	flag.StringVar(&commentPrefix, "prefix", commentPrefix, "Comment prefix")
-	flag.StringVar(&timeZone, "timezone", timeZone, "The timezone used by user")
+	flag.StringVar(&timeZoneLoc, "timezone", timeZoneLoc, "The timezone location used by user")
+
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
+	flag.StringVar(&clubId, "clubId", clubId, "The clubId used")
 	flag.Parse() // after declaring flags we need to call it
 	if *version {
 		log.Println("Version ", Version)
@@ -176,6 +183,9 @@ func Init() {
 	}
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonUser != "" && jsonPwd != "")
+	baseUrl = "https://my-fleet.eu/" + clubId + "/mobile/index0.php?&system=mobile&language=NL"
+	loc, _ := time.LoadLocation(timeZoneLoc)
+	timeZone = time.Now().In(loc).Format("-07:00")
 }
 
 //Create from the html response a booking array
@@ -702,7 +712,7 @@ func login(booking *BookingInterface) error {
 	var request *http.Request
 	booking.Authorized = false
 	//Step 1: Get Cookie
-	var webUrl string = "https://my-fleet.eu/R1B34/text/index.php?clubname=rvs&variant="
+	var webUrl string = "https://my-fleet.eu/" + clubId + "/text/index.php?clubname=rvs&variant="
 	request, err = http.NewRequest(http.MethodGet, webUrl, nil)
 	if err != nil {
 		return err
@@ -825,7 +835,7 @@ func jsonServer() error {
 		//Autoincrement booking id
 		var id int64 = 0
 		for _, booking := range bookings {
-			id = MaxInt64(id, booking.Id)
+			id = MaxInt64(id, booking.Id+1)
 		}
 		new_booking := new(BookingInterface)
 		new_booking.Id = id
@@ -834,6 +844,12 @@ func jsonServer() error {
 		err := c.Bind(new_booking)
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+
+		//Round the time to the closed one
+		if strings.Contains(new_booking.Time, "T") {
+			thetime, _ := time.Parse(time.RFC3339, new_booking.Time)
+			new_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
 		}
 
 		bookings = append(bookings, *new_booking)
@@ -850,6 +866,11 @@ func jsonServer() error {
 		if err != nil {
 			log.Error(err, updated_booking)
 			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+		//Round the time to the closed one
+		if strings.Contains(updated_booking.Time, "T") {
+			thetime, _ := time.Parse(time.RFC3339, updated_booking.Time)
+			updated_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
 		}
 
 		for i, booking := range bookings {

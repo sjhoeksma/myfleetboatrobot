@@ -3,6 +3,7 @@ import MaterialTable from 'material-table';
 import './App.css';
 import axios from 'axios';
 import { Alert, AlertTitle } from '@material-ui/lab';
+import packageJson from '../package.json';
 
 var url = "http://localhost:1323/booking"
 if (process.env.NODE_ENV === 'production') {
@@ -21,14 +22,13 @@ const App = () => {
      //, lookup: {"lynx": "Lynx", "sneep": "Sneep"}
     },
     { title: 'Datum', field: 'date' ,  type : 'date'},
-    { title: 'Tijd', field: 'time', sorting :false, type : 'time', 
-      render: (rowData) => (rowData.time.substring(11,16)) },
+    { title: 'Tijd', field: 'time', sorting :false, type : 'time' },
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
     { title: 'Gebruiker', field: 'user' },
     { title: 'Password', field: 'password', sorting :false  },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
-    { title: 'Status', field: 'state' },
+    { title: 'Status', field: 'state' , editable : 'never'},
     { title: 'Melding', field: 'message', editable : 'never', sorting :false },
   ]
 
@@ -96,7 +96,6 @@ const App = () => {
 
   //function for deleting a row
   const handleRowDelete = (oldData, resolve,reject) => {
-    console.log("delete",oldData)
     axios.delete(`${url}/${oldData.id}`)
       .then(response => {
         const data = response.data;
@@ -213,7 +212,7 @@ const App = () => {
           </Alert>
         }
       </div>
-
+      <small class="version">v {packageJson.version}</small>
     </div>
   );
 }

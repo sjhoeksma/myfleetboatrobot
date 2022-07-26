@@ -1,5 +1,6 @@
-#
-
+# Spaarne Boot Robot
+With is program you can automate booking a element of you club if the fleet is managed by: https://my-fleet.eu/ 
+ 
 Buidling: **docker build --tag 3pidev/spaarne .**
 docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --restart unless-stopped 3pidev/spaarne:latest
 docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne  3pidev/spaarne:latest
@@ -23,3 +24,8 @@ Booking.EpochDate                <    Booking.Duration   >
 	starttime := MinInt64(booking.EpochStart, MinInt64(booking.EpochStart, endtime-booking.Duration*60))
 	starttime = MaxInt64(starttime, boatList.SunRise)
 3. Check if duration is bigger the minimalDuration
+
+## ToDo
+* Time allowes are 0,15,30,45  (/15*15)
+* Bootlist instead of input
+* Username and password from DB
