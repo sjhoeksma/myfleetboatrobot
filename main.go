@@ -184,6 +184,7 @@ func Init() {
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonUser != "" && jsonPwd != "")
 	baseUrl = "https://my-fleet.eu/" + clubId + "/mobile/index0.php?&system=mobile&language=NL"
+
 	log.Println("Setting timezone: ", timeZoneLoc)
 	loc, err := time.LoadLocation(timeZoneLoc)
 	if err != nil {

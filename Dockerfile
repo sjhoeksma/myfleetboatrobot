@@ -23,7 +23,6 @@ RUN npm run build
 ## SERVER
 ##
 FROM golang:1.18-alpine AS SERVER
-
 WORKDIR /app
 
 COPY go.mod ./
@@ -38,7 +37,7 @@ RUN go build -v -o server
 ## DEPLOY
 ##
 FROM alpine:latest 
-
+RUN apk add --no-cache tzdata
 WORKDIR /app
 
 COPY --from=SERVER /app/server /app/server
