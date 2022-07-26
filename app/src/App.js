@@ -50,7 +50,13 @@ const App = () => {
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
     { title: 'Gebruiker', field: 'user' },
-    { title: 'Password', field: 'password', sorting :false  },
+    { title: 'Password', field: 'password', sorting :false , render: rowData => <p>{rowData.password.split('').map(() => '*')}</p>,
+      editComponent: props => (
+        <input
+            type="password"
+            value={props.value}
+            onChange={e => props.onChange(e.target.value)}
+        />) },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
     { title: 'Status', field: 'state' , editable : 'never'},
     { title: 'Melding', field: 'message', editable : 'never', sorting :false },
