@@ -184,8 +184,6 @@ func Init() {
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonUser != "" && jsonPwd != "")
 	baseUrl = "https://my-fleet.eu/" + clubId + "/mobile/index0.php?&system=mobile&language=NL"
-
-	log.Println("Setting timezone: ", timeZoneLoc)
 	loc, err := time.LoadLocation(timeZoneLoc)
 	if err != nil {
 		log.Fatal(err)
@@ -284,8 +282,16 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 					if baseop == 0 {
 						boatList.EpochStart, _ = strconv.ParseInt(val2, 10, 64)
 					}
-					boatList.EpochEnd, _ = strconv.ParseInt(val2, 10, 64)
-					boatList.EpochEnd += int64(minDuration) * 60 //Add the minimal book time
+					ee, _ := strconv.ParseInt(val2, 10, 64)
+					ee += int64(minDuration) * 60 //Add the minimal book time
+					boatList.EpochEnd = MaxInt64(ee, boatList.EpochEnd)
+				})
+				baseselect.Find("optgroup").Each(func(baseop int, baseoption *goquery.Selection) {
+					val2, _ := baseoption.Attr("label")
+					thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+val2+":00"+booking.TimeZone)
+					ee := thetime.Unix()
+					ee += int64(minDuration) * 60 //Add the minimal book time
+					boatList.EpochEnd = MaxInt64(ee, boatList.EpochEnd)
 				})
 			}
 			if exists && val == "end" {
@@ -334,7 +340,7 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 }
 
 //Search a boat for the specified booking
-func boatSearchByTime(booking *BookingInterface, starttime int64, endtime int64) (*BoatListInterface, error) {
+func boatSearchByTime(booking *BookingInterface, starttime int64) (*BoatListInterface, error) {
 	var filter string = "0"
 	var boatList BoatListInterface
 	if booking.BoatFilter != "" {
@@ -349,7 +355,7 @@ func boatSearchByTime(booking *BookingInterface, starttime int64, endtime int64)
 	data.Set("typeFilter", filter)
 	data.Set("date", strconv.FormatInt(booking.EpochDate, 10))
 	data.Set("start", strconv.FormatInt(starttime, 10))
-	data.Set("end", strconv.FormatInt(endtime, 10))
+	//data.Set("end", strconv.FormatInt(endtime, 10))
 	data.Set("username", booking.Username)
 	data.Set("password", booking.Password)
 	data.Set("comment", "")
@@ -382,13 +388,13 @@ func boatSearchByTime(booking *BookingInterface, starttime int64, endtime int64)
 
 //Default boat search for the specifed period
 func boatSearch(booking *BookingInterface) (*BoatListInterface, error) {
-	return boatSearchByTime(booking, booking.EpochStart, booking.EpochEnd)
+	return boatSearchByTime(booking, booking.EpochDate)
 }
 
 func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
 	//We need to have a boot id before we can do a booking
 	if booking.BoatId == "" {
-		boatList, err := boatSearchByTime(booking, starttime, endtime)
+		boatList, err := boatSearchByTime(booking, starttime)
 		if err != nil {
 			return err
 		}
@@ -483,17 +489,6 @@ func boatCancel(booking *BookingInterface) error {
 	booking.State = "Canceled"
 	return err
 }
-
-/* We still should try to find a way to edit the booking instead of createing a new one
-cancel
-action: edit
-exec: cancel
-id: 442762
-
-Change in screen
-newStart: 76
-newEnd: 82
-*/
 
 //Do a update of the boat by canceling it and booking it again
 func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error {
@@ -592,20 +587,22 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			newEndTime := MinInt64(boatList.EpochEnd, b.EpochEnd)
 			newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-b.Duration*60))
 			newStartTime = MaxInt64(newStartTime, boatList.SunRise)
-			//log.Println("Epoch", b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet)
+			//log.Println("Epoch", startTime, newStartTime, endTime, newEndTime, b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet, bb)
 
 			//Check if their is a reason to update the booking
 
 			if newStartTime > startTime || newEndTime > endTime {
-				log.Println("Moving", bb, startTime, newStartTime, endTime, newEndTime)
 				err = boatUpdate(b, newStartTime, newEndTime)
 				if err != nil {
 					b.State = "Retry"
 				} else {
+					loc, _ := time.LoadLocation(timeZoneLoc)
+					b.Message = time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
 					if b.EpochStart == newStartTime && b.EpochEnd == newEndTime {
 						b.State = "Finished"
 					} else {
 						b.State = "Moving"
+
 					}
 				}
 				return true, err
@@ -662,7 +659,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	}
 
 	//Load the boatList for the need time
-	boatList, err = boatSearchByTime(b, starttime, endtime)
+	boatList, err = boatSearchByTime(b, starttime)
 	if err != nil {
 		return false, err
 	}
