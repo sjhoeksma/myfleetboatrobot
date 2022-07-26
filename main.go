@@ -114,13 +114,13 @@ type BoatListInterface struct {
 }
 
 var singleRun bool = true
-var sleepInterval int = 5
 var commentPrefix string = "#:"
 var bindAddress string = ":1323"
 var jsonUser string
 var jsonPwd string
 var jsonProtect bool
 var baseUrl string
+var refreshInterval int = 5
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -155,7 +155,7 @@ func shortTime(timeS string) string {
 		loc, _ := time.LoadLocation(timeZoneLoc)
 		return thetime.Round(15 * time.Minute).In(loc).Format("15:04")
 	}
-	thetime, _ := time.Parse(time.RFC3339, "2001-01-01"+"T"+timeS[0:5]+":00")
+	thetime, _ := time.Parse(time.RFC3339, "2001-01-01"+"T"+timeS+":00+00:00")
 	return thetime.Round(15 * time.Minute).Format("15:04")
 }
 
@@ -171,7 +171,7 @@ func Init() {
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
 	flag.StringVar(&commentPrefix, "prefix", commentPrefix, "Comment prefix")
 	flag.StringVar(&timeZoneLoc, "timezone", timeZoneLoc, "The timezone location used by user")
-
+	flag.IntVar(&refreshInterval, "refresh", refreshInterval, "The bind address to be used for webserver")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
@@ -1021,7 +1021,7 @@ func bookLoop() {
 		}
 		//We sleep before we restart,
 		//TODO: align it on the 0,15,30,45 min mark
-		time.Sleep(time.Minute * time.Duration(sleepInterval))
+		time.Sleep(time.Minute * time.Duration(refreshInterval))
 		//log.Println("Awake from Sleep")
 	}
 }
