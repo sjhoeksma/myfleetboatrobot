@@ -571,6 +571,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			}
 			//Convert the current start end times to Epoch
 			times := strings.Fields(bb[2]) //10:00 - 12:00
+			//log.Println("boat", bb)
 			thetime, _ := time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[0]+":00"+b.TimeZone)
 			startTime := thetime.Unix()
 			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
@@ -591,9 +592,12 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			newEndTime := MinInt64(boatList.EpochEnd, b.EpochEnd)
 			newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-b.Duration*60))
 			newStartTime = MaxInt64(newStartTime, boatList.SunRise)
+			//log.Println("Epoch", b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet)
 
 			//Check if their is a reason to update the booking
-			if (startTime != newStartTime || endTime != newEndTime) && newEndTime != newStartTime {
+
+			if newStartTime > startTime || newEndTime > endTime {
+				log.Println("Moving", bb, startTime, newStartTime, endTime, newEndTime)
 				err = boatUpdate(b, newStartTime, newEndTime)
 				if err != nil {
 					b.State = "Retry"
@@ -999,8 +1003,8 @@ func bookLoop() {
 			if vchanged {
 				changed = true
 				bookingSlice[i] = booking
+				log.Println(booking.State, booking.Name, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
 			}
-			log.Println(booking.State, booking.Name, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
 
 			//Step 3: logout
 			logout(&booking)

@@ -26,6 +26,6 @@ Booking.EpochDate                <    Booking.Duration   >
 3. Check if duration is bigger the minimalDuration
 
 ## ToDo
-* Time allowes are 0,15,30,45  (/15*15)
 * Bootlist instead of input
 * Username and password from DB
+* Time as DropDown default 09:30
