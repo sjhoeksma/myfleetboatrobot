@@ -36,6 +36,8 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --re
 # ToDo
 * Bootlist instead of input
 * Username and password from DB
+* Refesh the webpage after 5 min inactive
+* Start of date gaat fout lijkt het
 
 
 # How the system finds a slot

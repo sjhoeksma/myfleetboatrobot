@@ -91,6 +91,8 @@ type BookingInterface struct {
 	BookingId  string         `json:"bookingid,omitempty"`
 	BoatId     string         `json:"boatid,omitempty"`
 	BoatFilter string         `json:"boatfilter,omitempty"`
+	Message    string         `json:"message,omitempty"`
+	EpochNext  int64          `json:"next,omitempty"`
 	TimeZone   string         `json:"-"`
 	Cookies    []*http.Cookie `json:"-"`
 	Bookings   *[][]string    `json:"-"`
@@ -98,7 +100,6 @@ type BookingInterface struct {
 	EpochStart int64          `json:"-"`
 	EpochEnd   int64          `json:"-"`
 	Authorized bool           `json:"-"`
-	Message    string         `json:"message,omitempty"`
 }
 
 type BookingSlice []BookingInterface
@@ -121,6 +122,7 @@ var jsonPwd string
 var jsonProtect bool
 var baseUrl string
 var refreshInterval int = 5
+var test string = ""
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -176,10 +178,15 @@ func Init() {
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.StringVar(&clubId, "clubId", clubId, "The clubId used")
+	flag.StringVar(&test, "test", test, "The test action to perform")
 	flag.Parse() // after declaring flags we need to call it
 	if *version {
 		log.Println("Version ", Version)
 		os.Exit(0)
+	}
+	//When test action is specified we are allways in singlerun
+	if test != "" {
+		singleRun = true
 	}
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonUser != "" && jsonPwd != "")
@@ -258,12 +265,12 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 			//SunRise -15min
 			if exists && val == "css/solopp.gif" {
 				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "-")[0]+":00"+booking.TimeZone)
-				boatList.SunRise = thetime.Add(-time.Minute * 15).Unix()
+				boatList.SunRise = thetime.Add(-time.Minute * 15).Round(15 * time.Minute).Unix()
 			}
 			//SunSet +15 min
 			if exists && val == "css/solned.gif" {
 				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "+")[0]+":00"+booking.TimeZone)
-				boatList.SunSet = thetime.Add(time.Minute * 15).Unix()
+				boatList.SunSet = thetime.Add(time.Minute * 15).Round(15 * time.Minute).Unix()
 			}
 		})
 		basehtml.Find("select").Each(func(basesl int, baseselect *goquery.Selection) {
@@ -548,7 +555,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if strings.Index(bb[5], b.Name) == 0 && bb[1] == shortDate(b.Date) {
 			//Check if the booking contains the commment created or specified
 			if len(bb) < 7 || bb[6] != (commentPrefix+b.Comment) {
-				log.Println("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
+				//log.Println("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
 				//Skip to next boat because we are not looking for this one
 				continue
 			}
@@ -618,10 +625,18 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		return true, nil
 	}
 
+	//Check if we should mark record for removal, after 12 hours
+	if b.EpochEnd < time.Now().Add(-time.Hour*12).Unix() {
+		//log.Println("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
+		b.State = "Delete"
+		b.Message = "Booking marked for Delete"
+		return true, nil
+	}
+
 	//Check fail a booking in the past
-	if b.EpochDate < time.Now().Unix() {
+	if b.EpochStart < time.Now().Unix() {
 		b.State = "Failed"
-		b.Message = "Booking, not ready and now in the past"
+		b.Message = "Booking in the past"
 		return true, nil
 	}
 
@@ -638,21 +653,34 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if b.State != "Waiting" {
 			b.Message = "Date not valid yet"
 			b.State = "Waiting"
+			b.EpochNext = b.EpochDate
 			return true, nil
 		}
 		return false, nil
 	}
+
+	//Check if we would be allowed booking, we need to be after Sunrise
+	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
+		if b.State != "Waiting" {
+			b.Message = "Time before Sunrise"
+			b.State = "Waiting"
+			b.EpochNext = boatList.SunRise
+			return true, nil
+		}
+		return false, nil
+	}
+
 	//Calculate the minimal start and end time
 	endtime := MinInt64(boatList.EpochEnd, b.EpochEnd)
 	starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-b.Duration*60))
 	starttime = MaxInt64(starttime, boatList.SunRise)
 
 	//Check if we are allowed to book this
-	if endtime-starttime < int64(minDuration*60) || starttime < boatList.SunRise {
-		//log.Println("Booking not yet possible", starttime, endtime, boatList.SunRise)
+	if endtime-starttime < int64(minDuration*60) {
 		if b.State != "Waiting" {
-			b.Message = "Date not valid yet"
+			b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
 			b.State = "Waiting"
+			b.EpochNext = endtime - int64(minDuration*60)
 			return true, nil
 		}
 		return false, nil
@@ -663,23 +691,37 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	if err != nil {
 		return false, err
 	}
+
+	//Issue when selection all boot
+
 	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
 	//Check if the boot is available requested period
 	for _, bb := range *boatList.Boats { //Array element 2 is the boat name
 		if strings.Index(bb[2], b.Name) == 0 {
 			//Book the boat id is element 0
 			b.BoatId = bb[0]
+			b.BoatFilter = boatFilter[bb[1]]
 			err := boatBook(b, starttime, endtime)
-			if b.EpochStart == starttime && b.EpochEnd == endtime {
-				b.State = "Finished"
-			} else {
-				b.State = "Moving"
+			if err == nil {
+				loc, _ := time.LoadLocation(timeZoneLoc)
+				b.Message = time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
+				if b.EpochStart == starttime && b.EpochEnd == endtime {
+					b.State = "Finished"
+				} else {
+					b.State = "Moving"
+				}
 			}
 			return err == nil, err
 		}
 	}
-	b.State = "Failed"
-	return true, errors.New("boat not available")
+
+	err = errors.New("boat not available, not found in list")
+	if b.State != "Retry" {
+		log.Println("Retry data", starttime, endtime, boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
+		b.State = "Retry"
+		return true, err
+	}
+	return false, err
 }
 
 //Logout for the specified booking
@@ -789,6 +831,12 @@ func writeJson(data BookingSlice) {
 			log.Fatal(err)
 		}
 	}
+	for i := len(data) - 1; i >= 0; i-- {
+		if data[i].State == "Delete" {
+			log.Println("Deleting", data[i].State, data[i].Name, data[i].Username, shortDate(data[i].Date), shortTime(data[i].Time))
+			data = append(data[:i], data[i+1:]...)
+		}
+	}
 	json_to_file, _ := json.Marshal(data)
 	err := ioutil.WriteFile(bookingFile, json_to_file, 0644)
 	if err != nil {
@@ -847,6 +895,7 @@ func jsonServer() error {
 		new_booking.Id = id
 		new_booking.State = ""
 		new_booking.Message = ""
+		new_booking.EpochNext = 0
 		err := c.Bind(new_booking)
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Bad request.")
@@ -873,6 +922,9 @@ func jsonServer() error {
 			log.Error(err, updated_booking)
 			return c.String(http.StatusBadRequest, "Bad request.")
 		}
+		updated_booking.EpochNext = 0
+		updated_booking.State = ""
+		updated_booking.Message = ""
 		//Round the time to the closed one
 		if strings.Contains(updated_booking.Time, "T") {
 			thetime, _ := time.Parse(time.RFC3339, updated_booking.Time)
@@ -927,12 +979,6 @@ func bookLoop() {
 		//TODO: We should read it from file or json url
 		bookingSlice := readJson()
 		for i, booking := range bookingSlice {
-			//Check if have allready processed the booking, if so skip it
-			if booking.State == "Finished" || booking.State == "Canceled" ||
-				booking.State == "Failed" {
-				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
-				continue
-			}
 			//Step 0: Data convertions
 
 			//Set the timezone
@@ -978,6 +1024,21 @@ func bookLoop() {
 				booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
 			}
 
+			//Check if have allready processed the booking, if so skip it
+			if booking.State == "Finished" || booking.State == "Canceled" ||
+				booking.State == "Failed" || booking.EpochNext > time.Now().Unix() {
+				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
+				//Check if we should mark record for removal, after 12 hours
+				if booking.EpochEnd < time.Now().Add(-time.Hour*12).Unix() {
+					//log.Println("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
+					booking.State = "Delete"
+					booking.Message = "Booking marked for Delete"
+					bookingSlice[i] = booking
+					changed = true
+				}
+				continue
+			}
+
 			//The message will be rest after every run
 			booking.Message = ""
 
@@ -991,6 +1052,7 @@ func bookLoop() {
 			//Step 2: doBooking
 			vchanged, err := doBooking(&booking)
 			if err != nil {
+				booking.State = "Error"
 				booking.Message = err.Error()
 				vchanged = true
 				log.Error(err)
@@ -999,6 +1061,8 @@ func bookLoop() {
 			//If data has been changed update the booking array
 			if vchanged {
 				changed = true
+				//Sleep the booking for at least 15 min
+				booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Unix())
 				bookingSlice[i] = booking
 				log.Println(booking.State, booking.Name, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
 			}
@@ -1017,9 +1081,8 @@ func bookLoop() {
 			break
 		}
 		//We sleep before we restart,
-		//TODO: align it on the 0,15,30,45 min mark
 		time.Sleep(time.Minute * time.Duration(refreshInterval))
-		//log.Println("Awake from Sleep")
+		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }
 
@@ -1033,6 +1096,14 @@ func main() {
 		}
 
 	} else {
-		bookLoop()
+		switch test {
+		case "login_response":
+			file, _ := ioutil.ReadFile("login-response.html")
+			str := string(file)
+			log.Println("login_response", readbookingList(&str))
+
+		default:
+			bookLoop()
+		}
 	}
 }

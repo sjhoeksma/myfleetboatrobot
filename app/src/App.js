@@ -18,7 +18,7 @@ const App = () => {
 
   let columns = [
     { title: 'Id', field: 'id', hidden: true },
-    { title: 'Boot', field: 'boat'
+    { title: 'Boot', field: 'boat', editable : 'onAdd'
      //, lookup: {"lynx": "Lynx", "sneep": "Sneep"}
     },
     { title: 'Datum', field: 'date' ,  type : 'date'},
@@ -49,7 +49,7 @@ const App = () => {
      },
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
-    { title: 'Gebruiker', field: 'user' },
+    { title: 'Gebruiker', field: 'user',  },
     { title: 'Password', field: 'password', sorting :false , render: rowData => <p>{rowData.password.split('').map(() => '*')}</p>,
       editComponent: props => (
         <input
@@ -189,7 +189,6 @@ const App = () => {
       reject()
     }
   }
-
 
   return (
     <div className="app">
