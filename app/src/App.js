@@ -4,11 +4,14 @@ import './App.css';
 import axios from 'axios';
 import { Alert, AlertTitle } from '@material-ui/lab';
 import packageJson from '../package.json';
+import ActivityDetector from 'react-activity-detector';
 
 var url = "http://localhost:1323/booking"
 if (process.env.NODE_ENV === 'production') {
   url = "/booking"
 }
+
+var idleFlag = true
 
 const App = () => {
 
@@ -190,8 +193,29 @@ const App = () => {
     }
   }
 
+  const customActivityEvents = [
+    'click', 'keydown', 'mousedown', 'touchstart', 'focus'
+  ];
+
+  const onIdle = () => {
+    idleFlag=true
+  }
+
+  const onActive = () => {
+    if (idleFlag){
+      idleFlag =false
+      axios.get(`${url}`)
+      .then(res => {
+        const booking = res.data;
+        setBooking(booking);
+        //console.log(booking);
+      })
+    }
+  }
+
   return (
     <div className="app">
+      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={60*1000} onIdle={onIdle} onActive={onActive}/>
       <h1>Boot Robot</h1> <br /><br />
 
       <MaterialTable
