@@ -28,6 +28,7 @@ var timeZoneLoc = "Europe/Amsterdam"
 var timeZone = "+02:00"
 var minDuration = 60  //The minimal duration required to book
 var maxDuration = 150 //The maximal duration allowed to book
+var bookWindow = 48   //The number of hours allowed to book
 
 var boatFilter = map[string]string{
 	"Alle boten": "0",
@@ -173,7 +174,8 @@ func Init() {
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
 	flag.StringVar(&commentPrefix, "prefix", commentPrefix, "Comment prefix")
 	flag.StringVar(&timeZoneLoc, "timezone", timeZoneLoc, "The timezone location used by user")
-	flag.IntVar(&refreshInterval, "refresh", refreshInterval, "The bind address to be used for webserver")
+	flag.IntVar(&refreshInterval, "refresh", refreshInterval, "The iterval in minutes used for refeshing")
+	flag.IntVar(&bookWindow, "bookWindow", bookWindow, "The interval in hours for allowed bookings")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
@@ -653,7 +655,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if b.State != "Waiting" {
 			b.Message = "Date not valid yet"
 			b.State = "Waiting"
-			b.EpochNext = b.EpochDate
+			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Unix()
 			return true, nil
 		}
 		return false, nil
@@ -664,7 +666,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if b.State != "Waiting" {
 			b.Message = "Time before Sunrise"
 			b.State = "Waiting"
-			b.EpochNext = boatList.SunRise
+			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-time.Duration(bookWindow) * time.Hour).Unix()
 			return true, nil
 		}
 		return false, nil
@@ -680,7 +682,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if b.State != "Waiting" {
 			b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
 			b.State = "Waiting"
-			b.EpochNext = endtime - int64(minDuration*60)
+			b.EpochNext = time.Now().Unix() - (endtime - starttime)
 			return true, nil
 		}
 		return false, nil
@@ -715,7 +717,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		}
 	}
 
-	err = errors.New("boat not available, not found in list")
+	err = errors.New("boat not in available list")
 	if b.State != "Retry" {
 		log.Println("Retry data", starttime, endtime, boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
 		b.State = "Retry"
@@ -951,11 +953,14 @@ func jsonServer() error {
 		for i, booking := range bookings {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				if booking.State == "Failed" || booking.State == "Waiting" ||
-					booking.State == "" || booking.State == "Canceled" {
+					booking.State == "" || booking.State == "Canceled" ||
+					booking.State == "Error" {
+					log.Println("Deleting", booking.State, booking.Name, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
 					bookings = append(bookings[:i], bookings[i+1:]...)
 					writeJson(bookings)
 				} else if booking.State != "Cancel" {
 					booking.State = "Cancel"
+					booking.EpochNext = 0
 					bookings[i] = booking
 					writeJson(bookings)
 				}

@@ -11,7 +11,7 @@ if (process.env.NODE_ENV === 'production') {
   url = "/booking"
 }
 
-var idleFlag = true
+var idleTimer = 0
 
 const App = () => {
 
@@ -65,16 +65,19 @@ const App = () => {
     { title: 'Melding', field: 'message', editable : 'never', sorting :false },
   ]
 
-  useEffect(() => {
+  const refreshData = () =>{
     axios.get(`${url}`)
-      .then(res => {
-        const booking = res.data;
-        setBooking(booking);
-        // console.log(booking);
-      })
-  }, [])
+    .then(res => {
+      const booking = res.data;
+      setBooking(booking);
+      //console.log(booking);
+    })
+  }
 
-
+  useEffect(() => {
+    refreshData()
+   }, [])
+ 
 
   //function for updating the existing row details
   const handleRowUpdate = (newData, oldData, resolve,reject) => {
@@ -198,24 +201,20 @@ const App = () => {
   ];
 
   const onIdle = () => {
-    idleFlag=true
+    //Refresh data every minute
+    idleTimer = setInterval(refreshData, 60000)
   }
 
   const onActive = () => {
-    if (idleFlag){
-      idleFlag =false
-      axios.get(`${url}`)
-      .then(res => {
-        const booking = res.data;
-        setBooking(booking);
-        //console.log(booking);
-      })
+    if (idleTimer !== 0) {
+      clearInterval(idleTimer);
     }
+    idleTimer=0
   }
 
   return (
     <div className="app">
-      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={60*1000} onIdle={onIdle} onActive={onActive}/>
+      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={10*1000} onIdle={onIdle} onActive={onActive}/>
       <h1>Boot Robot</h1> <br /><br />
 
       <MaterialTable
