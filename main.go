@@ -26,9 +26,11 @@ var clubId = "R1B34"
 var bookingFile = "json/booking.json"
 var timeZoneLoc = "Europe/Amsterdam"
 var timeZone = "+02:00"
-var minDuration = 60  //The minimal duration required to book
-var maxDuration = 150 //The maximal duration allowed to book
-var bookWindow = 48   //The number of hours allowed to book
+var minDuration = 60        //The minimal duration required to book
+var maxDuration = 150       //The maximal duration allowed to book
+var bookWindow = 48         //The number of hours allowed to book
+var maxRetry int = 15       //The maximum numbers of retry before we give up
+var refreshInterval int = 5 //We do a check of the database every 1 minute
 
 var boatFilter = map[string]string{
 	"Alle boten": "0",
@@ -94,6 +96,7 @@ type BookingInterface struct {
 	BoatFilter string         `json:"boatfilter,omitempty"`
 	Message    string         `json:"message,omitempty"`
 	EpochNext  int64          `json:"next,omitempty"`
+	Retry      int            `json:"retry,omitempty"`
 	TimeZone   string         `json:"-"`
 	Cookies    []*http.Cookie `json:"-"`
 	Bookings   *[][]string    `json:"-"`
@@ -122,7 +125,6 @@ var jsonUser string
 var jsonPwd string
 var jsonProtect bool
 var baseUrl string
-var refreshInterval int = 5
 var test string = ""
 
 //Find min of 2 int64 values
@@ -719,8 +721,21 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	err = errors.New("boat not in available list")
 	if b.State != "Retry" {
-		log.Println("Retry data", starttime, endtime, boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
+		log.WithFields(log.Fields{
+			"state":              b.State,
+			"boat":               b.Name,
+			"user":               b.Username,
+			"from":               shortDate(b.Date),
+			"to":                 shortTime(b.Time),
+			"starttime":          starttime,
+			"endtime":            endtime,
+			"boatlistEpochDate":  boatList.EpochDate,
+			"boatlistEpochStart": boatList.EpochStart,
+			"boatlistEpochEnd":   boatList.EpochEnd,
+			"boats":              *boatList.Boats,
+		}).Info("Retry data")
 		b.State = "Retry"
+		b.Retry++
 		return true, err
 	}
 	return false, err
@@ -817,11 +832,12 @@ func readJson() BookingSlice {
 	}
 	file, err := ioutil.ReadFile(bookingFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		return b
 	}
 	err = json.Unmarshal(file, &b)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 	return b
 }
@@ -835,7 +851,13 @@ func writeJson(data BookingSlice) {
 	}
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].State == "Delete" {
-			log.Println("Deleting", data[i].State, data[i].Name, data[i].Username, shortDate(data[i].Date), shortTime(data[i].Time))
+			log.WithFields(log.Fields{
+				"state": data[i].State,
+				"boat":  data[i].Name,
+				"user":  data[i].Username,
+				"from":  shortDate(data[i].Date),
+				"to":    shortTime(data[i].Time),
+			}).Info("Deleting")
 			data = append(data[:i], data[i+1:]...)
 		}
 	}
@@ -955,7 +977,13 @@ func jsonServer() error {
 				if booking.State == "Failed" || booking.State == "Waiting" ||
 					booking.State == "" || booking.State == "Canceled" ||
 					booking.State == "Error" {
-					log.Println("Deleting", booking.State, booking.Name, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
+					log.WithFields(log.Fields{
+						"state": booking.State,
+						"boat":  booking.Name,
+						"user":  booking.Username,
+						"from":  shortDate(booking.Date),
+						"to":    shortTime(booking.Time),
+					}).Info("Deleting")
 					bookings = append(bookings[:i], bookings[i+1:]...)
 					writeJson(bookings)
 				} else if booking.State != "Cancel" {
@@ -1024,11 +1052,6 @@ func bookLoop() {
 			thetime = thetime.Add(time.Minute * time.Duration(booking.Duration))
 			booking.EpochEnd = thetime.Unix()
 
-			//Check if comment is set, if not fill default
-			if booking.Comment == "" {
-				booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
-			}
-
 			//Check if have allready processed the booking, if so skip it
 			if booking.State == "Finished" || booking.State == "Canceled" ||
 				booking.State == "Failed" || booking.EpochNext > time.Now().Unix() {
@@ -1044,6 +1067,20 @@ func bookLoop() {
 				continue
 			}
 
+			//Stop retring
+			if booking.Retry > maxRetry {
+				booking.State = "Failed"
+				booking.Message = "To many retry's"
+				bookingSlice[i] = booking
+				changed = true
+				continue
+			}
+
+			//Check if comment is set, if not fill default
+			if booking.Comment == "" {
+				booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
+			}
+
 			//The message will be rest after every run
 			booking.Message = ""
 
@@ -1057,6 +1094,7 @@ func bookLoop() {
 			//Step 2: doBooking
 			vchanged, err := doBooking(&booking)
 			if err != nil {
+				booking.Retry++
 				booking.State = "Error"
 				booking.Message = err.Error()
 				vchanged = true
@@ -1069,7 +1107,14 @@ func bookLoop() {
 				//Sleep the booking for at least 15 min
 				booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Unix())
 				bookingSlice[i] = booking
-				log.Println(booking.State, booking.Name, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
+				log.WithFields(log.Fields{
+					"state": booking.State,
+					"boat":  booking.Name,
+					"user":  booking.Username,
+					"from":  shortDate(booking.Date),
+					"to":    shortTime(booking.Time),
+				}).Info(booking.Message)
+				//log.Println(booking.State,booking.State, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
 			}
 
 			//Step 3: logout
@@ -1085,13 +1130,15 @@ func bookLoop() {
 		if singleRun {
 			break
 		}
-		//We sleep before we restart,
-		time.Sleep(time.Minute * time.Duration(refreshInterval))
+		//We sleep before we restart, where we align as close as possible to interval, but always 5 sec for of set
+		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(5*time.Second).Unix() - time.Now().Unix()))
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }
 
 func main() {
+	log.SetFormatter(&log.TextFormatter{DisableColors: false, FullTimestamp: true})
+	//log.SetFormatter(&log.JSONFormatter{DisableColors: false, FullTimestamp: true,})
 	Init()
 	if !singleRun {
 		go bookLoop()
@@ -1099,7 +1146,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-
 	} else {
 		switch test {
 		case "login_response":
