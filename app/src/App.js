@@ -61,7 +61,7 @@ const App = () => {
             onChange={e => props.onChange(e.target.value)}
         />) },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
-    { title: 'UserCommentaar', field: 'usercomment', editable : 'never' ,type : 'boolean' },
+    { title: 'UserCommentaar', field: 'usercomment', hidden: true ,type : 'boolean' },
     { title: 'Status', field: 'state' , editable : 'never'},
     { title: 'Melding', field: 'message', editable : 'never', sorting :false },
   ]
