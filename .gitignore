@@ -1,8 +1,6 @@
 /.vscode
-/boot-response.html
-/confirm-response.html
-/login-response.html
 /main.whatsapp.txt
-/update-reponse.html
-json/booking.json
+json/*
 .DS_Store
+html/*
+

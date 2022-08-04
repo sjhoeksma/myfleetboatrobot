@@ -61,6 +61,7 @@ const App = () => {
             onChange={e => props.onChange(e.target.value)}
         />) },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
+    { title: 'UserCommentaar', field: 'usercomment', editable : 'never' ,type : 'boolean' },
     { title: 'Status', field: 'state' , editable : 'never'},
     { title: 'Melding', field: 'message', editable : 'never', sorting :false },
   ]
@@ -108,7 +109,7 @@ const App = () => {
     }
 
     if (errorList.length < 1) {
-
+      newData.usercomment = oldData.usercomment || oldData.commment != newData.comment
       axios.put(`${url}/${newData.id}`, newData)
         .then(response => {
           const data = response.data;
@@ -208,13 +209,14 @@ const App = () => {
   const onActive = () => {
     if (idleTimer !== 0) {
       clearInterval(idleTimer);
+      refreshData()
     }
     idleTimer=0
   }
 
   return (
     <div className="app">
-      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={10*1000} onIdle={onIdle} onActive={onActive}/>
+      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30*1000} onIdle={onIdle} onActive={onActive}/>
       <h1>Boot Robot</h1> <br /><br />
 
       <MaterialTable

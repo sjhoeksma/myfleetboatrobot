@@ -35,13 +35,11 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --re
 
 # ToDo
 * Bootlist instead of input
-* Username and password from DB
 * Show Refresh indicator
-* Stop Retry after the boat.EpochEnd is lager than b.EpochEnd --> Failed
 * Boot through GUI
 
 mid=bootid
-rid=
+rid=bookingid
 from=
 dur=Duration/15
 https://my-fleet.eu/R1B34/gui/index.php?a=e&menu=Rmenu&extrainfo=mid%3D52%26co%3D0%26rid%3D443308%26from%3D195%26dur%3D6%26rec%3D0%26user%3D263&bounds=2292,2419.9333333333
@@ -49,6 +47,25 @@ a: e
 menu: Rmenu
 extrainfo: mid=52&co=0&rid=443308&from=195&dur=6&rec=0&user=263
 bounds: 2292,2419.9333333333
+
+Modify via gui
+//Find Data of Gui start
+//Second get boot ID and booking id from record
+//Simulate the menu action, and store the cookies
+POST https://my-fleet.eu/R1B34/gui/index.php?a=e&menu=Rmenu&page=1_modifylogbook
+FORDATA
+newStart: 170
+newEnd: 176
+clubcode: 
+username: SP..
+password: SP..
+POST https://my-fleet.eu/R1B34/gui/index.php?a=e&menu=Amenu
+FORMDATA
+newStart: 171
+newEnd: 176
+comment: #:09:30 - 11:00
+page: 3_commit
+act: Ok
 
 
 # How the system finds a slot
