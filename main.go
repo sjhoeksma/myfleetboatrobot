@@ -24,10 +24,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var Version = "0.0.1"
+var Version = "0.2.7"
 var clubId = "R1B34"
 var bookingFile = "json/booking.json"
 var boatFile = "json/boats.json"
+var userFile = "json/users.json"
 var timeZoneLoc = "Europe/Amsterdam"
 var timeZone = "+02:00"
 var minDuration = 60        //The minimal duration required to book
@@ -82,6 +83,11 @@ var maandFilter = map[string]string{
 	"oktober":   "10",
 	"november":  "11",
 	"december":  "12",
+}
+
+type UserInterface struct {
+	Username string `json:"user"`
+	Password string `json:"password"`
 }
 
 //Struc used to store boat and session info
@@ -210,6 +216,7 @@ func Init() {
 		log.Fatal(err)
 	}
 	timeZone = time.Now().In(loc).Format("-07:00")
+	log.Info("Spaarne v" + Version)
 }
 
 //Create from the html response a booking array
@@ -657,14 +664,44 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 */
 
 func doBooking(b *BookingInterface) (changed bool, err error) {
-
+	loc, _ := time.LoadLocation(timeZoneLoc)
 	//Step 2a: Check if we have a booking for the requested boat date and time
 	for _, bb := range *b.Bookings { //Array element 5 is the boat name
 
 		if strings.Contains(strings.ToLower(bb[5]), strings.ToLower(b.Name)) &&
 			bb[1] == shortDate(b.Date) {
+
+			//Convert the current start end times to Epoch
+			times := strings.Fields(bb[2]) //10:00 - 12:00
+			//log.Println("boat", bb)
+			thetime, _ := time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[0]+":00"+b.TimeZone)
+			startTime := thetime.Unix()
+			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
+			endTime := thetime.Unix()
+
 			//Check if the booking contains the commment created or specified
 			if len(bb) < 7 || !strings.EqualFold(bb[6], commentPrefix+b.Comment) {
+				//Check if there is a blockage
+				if ((b.EpochStart > startTime && b.EpochStart <= endTime) ||
+					(b.EpochEnd > startTime && b.EpochEnd <= endTime)) &&
+					b.State != "Blocked" {
+					if b.State == "Moving" {
+						log.WithFields(log.Fields{
+							"state": b.State,
+							"boat":  b.Name,
+							"user":  b.Username,
+							"at":    shortDate(b.Date),
+							"from":  shortTime(b.Time),
+						}).Info("Canceled because of blocked")
+						err = boatCancel(b)
+						if err != nil {
+							return true, err
+						}
+					} else {
+						b.State = "Blocked"
+					}
+					return true, errors.New("booking blocked by " + bb[3])
+				}
 				//log.Println("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
 				//Skip to next boat because we are not looking for this one
 				continue
@@ -681,13 +718,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 				return true, err
 			}
-			//Convert the current start end times to Epoch
-			times := strings.Fields(bb[2]) //10:00 - 12:00
-			//log.Println("boat", bb)
-			thetime, _ := time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[0]+":00"+b.TimeZone)
-			startTime := thetime.Unix()
-			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
-			endTime := thetime.Unix()
 
 			//Check if we should move this boat
 			if b.EpochStart == startTime && b.EpochEnd == endTime {
@@ -713,7 +743,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				if err != nil {
 					b.State = "Retry"
 				} else {
-					loc, _ := time.LoadLocation(timeZoneLoc)
 					b.Message = "At:" + time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
 					if b.EpochStart == newStartTime && b.EpochEnd == newEndTime {
 						b.State = "Finished"
@@ -969,6 +998,25 @@ func readBoatJson() []string {
 	return b
 }
 
+func readUsersJson() []UserInterface {
+	var b []UserInterface
+	var u UserInterface = UserInterface{Username: "?", Password: "?"}
+	b = append(b, u)
+	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
+	file, err := ioutil.ReadFile(userFile)
+	if err != nil {
+		log.Error(err)
+	} else {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return b
+}
+
 func readJson() BookingSlice {
 	b := BookingSlice{}
 	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
@@ -1000,6 +1048,21 @@ func readJson() BookingSlice {
 	return b
 }
 
+func writeUsersJson(data []UserInterface) {
+	if _, err := os.Stat(userFile); os.IsNotExist(err) {
+		err := os.MkdirAll(filepath.Dir(userFile), 0644) // Create your file
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	json_to_file, _ := json.Marshal(data)
+	mutex.Lock()
+	err := ioutil.WriteFile(userFile, json_to_file, 0644)
+	mutex.Unlock()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 func writeJson(data BookingSlice) {
 	if _, err := os.Stat(bookingFile); os.IsNotExist(err) {
 		err := os.MkdirAll(filepath.Dir(bookingFile), 0644) // Create your file
@@ -1054,12 +1117,20 @@ func jsonServer() error {
 
 	e.GET("/booking", func(c echo.Context) error {
 		bookings := readJson()
-
 		return c.JSON(http.StatusOK, bookings)
 	})
 	e.GET("/boat", func(c echo.Context) error {
 		boats := readBoatJson()
 		return c.JSON(http.StatusOK, boats)
+	})
+	e.GET("/users", func(c echo.Context) error {
+		users := readUsersJson()
+		return c.JSON(http.StatusOK, users)
+	})
+
+	e.GET("/version", func(c echo.Context) error {
+		var versionData = map[string]string{"version": Version}
+		return c.JSON(http.StatusOK, versionData)
 	})
 
 	e.GET("/booking/:id", func(c echo.Context) error {
@@ -1106,6 +1177,27 @@ func jsonServer() error {
 			"from": shortTime(new_booking.Time),
 		}).Info("Added boat")
 
+		//Add password to user file
+		users := readUsersJson()
+		var changed int = 0
+		for i, usr := range users {
+			if usr.Username == new_booking.Username {
+				if users[i].Password != new_booking.Password {
+					users[i].Password = new_booking.Password
+					changed = 1
+				} else {
+					changed = -1
+				}
+				break
+			}
+		}
+		if changed == 0 {
+			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password})
+		}
+		if changed >= 0 {
+			writeUsersJson(users)
+		}
+
 		return c.JSON(http.StatusOK, bookings)
 	})
 
@@ -1137,9 +1229,7 @@ func jsonServer() error {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				bookings = append(bookings[:i], bookings[i+1:]...)
 				bookings = append(bookings, *updated_booking)
-
 				writeJson(bookings)
-
 				return c.JSON(http.StatusOK, bookings)
 			}
 		}
@@ -1154,7 +1244,7 @@ func jsonServer() error {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				if booking.State == "Failed" || booking.State == "Waiting" ||
 					booking.State == "" || booking.State == "Canceled" ||
-					booking.State == "Error" {
+					booking.State == "Blocked" || booking.State == "Error" {
 					log.WithFields(log.Fields{
 						"state": booking.State,
 						"boat":  booking.Name,
@@ -1246,7 +1336,7 @@ func bookLoop() {
 
 			//Check if have allready processed the booking, if so skip it
 			if booking.State == "Finished" || booking.State == "Comfirmed" || booking.State == "Canceled" ||
-				booking.State == "Failed" || booking.EpochNext > time.Now().Unix() {
+				booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
 				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
 				//Check if we should mark record for removal, after 12 hours
 				if booking.EpochEnd < time.Now().Add(-time.Hour*12).Unix() {

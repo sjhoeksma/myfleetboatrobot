@@ -4,14 +4,11 @@ import './App.css';
 import axios from 'axios';
 import { Alert, AlertTitle,Autocomplete} from '@material-ui/lab'
 import { TextField} from '@material-ui/core'
-import packageJson from '../package.json';
 import ActivityDetector from 'react-activity-detector';
 
-var url = "http://localhost:1323/booking"
-var urlBoat = "http://localhost:1323/boat"
+var url = "http://localhost:1323/"
 if (process.env.NODE_ENV === 'production') {
-  url = "/booking"
-  urlBoat = "/boat"
+  url = "/"
 }
 
 var idleTimer = 0
@@ -20,14 +17,16 @@ const App = () => {
 
   const [booking, setBooking] = useState([]);
   const [boat, setBoat] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [version, setVersion] = useState([]);
   const [iserror, setIserror] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
 
+  //let users = [{user : "SP3436", password: "SP3436"},{user : "SP3435", password: "SP3435"}]
   let columns = [
     { title: 'Id', field: 'id', hidden: true },
     { title: 'Boot', field: 'boat', editable : 'onAdd',
-     //, lookup: {"lynx": "Lynx", "sneep": "Sneep"}
-     render: rowData => <p>{rowData.boat}</p>,
+     //render: rowData => <p>{rowData.boat}</p>,
      editComponent: props => (
      <Autocomplete
           freeSolo
@@ -37,8 +36,6 @@ const App = () => {
             return (
               <TextField
                 {...params}
-                label="Search"
-                variant="outlined"
                 fullWidth
               />
             );
@@ -75,11 +72,37 @@ const App = () => {
      },
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
-    { title: 'Gebruiker', field: 'user',  },
+    { title: 'Gebruiker', field: 'user',  
+     editComponent: props => (
+      <Autocomplete
+           freeSolo
+           id="user"
+           options={users}
+           getOptionLabel={(option) => option.user}
+           renderInput={params => {
+             return (
+               <TextField
+                 {...params}
+                 fullWidth
+               />
+             );
+           }}
+           onChange={e =>{
+            for(var i=0; i<users.length; i++) {
+              if (users[i]["user"] === e.target.innerText) {
+                 props.rowData["password"] = users[i]["password"]
+                break
+              }
+            }
+            return props.onChange(e.target.innerText)}
+          }
+           onInputChange={e =>props.onChange(e.target.value)}
+         />)
+    },
     { title: 'Password', field: 'password', sorting :false , 
       render: rowData => <p>{rowData.password.split('').map(() => '*')}</p>,
       editComponent: props => (
-        <input
+        <TextField
             type="password"
             value={props.value}
             onChange={e => props.onChange(e.target.value)}
@@ -91,7 +114,7 @@ const App = () => {
   ]
 
   const refreshData = () =>{
-    axios.get(`${url}`)
+    axios.get(`${url}booking`)
     .then(res => {
       const booking = res.data;
       setBooking(booking);
@@ -100,16 +123,35 @@ const App = () => {
   }
 
   const refreshBoat = () =>{
-    axios.get(`${urlBoat}`)
+    axios.get(`${url}boat`)
     .then(res => {
       const boat = res.data;
       setBoat(boat);
       //console.log(boat);
     })
   }
+
+  const refreshVersion = () =>{
+    axios.get(`${url}version`)
+    .then(res => {
+      const version = res.data;
+      setVersion(version.version);
+      //console.log(boat);
+    })
+  }
+
+  const refreshUsers = () =>{
+    axios.get(`${url}users`)
+    .then(res => {
+      const users = res.data;
+      setUsers(users);
+    })
+  }
   useEffect(() => {
     refreshData()
     refreshBoat()
+    refreshVersion()
+    refreshUsers()
    }, [])
  
 
@@ -143,7 +185,7 @@ const App = () => {
 
     if (errorList.length < 1) {
       newData.usercomment = oldData.usercomment || oldData.commment !== newData.comment
-      axios.put(`${url}/${newData.id}`, newData)
+      axios.put(`${url}booking/${newData.id}`, newData)
         .then(response => {
           const data = response.data;
           setBooking(data);
@@ -166,7 +208,7 @@ const App = () => {
 
   //function for deleting a row
   const handleRowDelete = (oldData, resolve,reject) => {
-    axios.delete(`${url}/${oldData.id}`)
+    axios.delete(`${url}booking/${oldData.id}`)
       .then(response => {
         const data = response.data;
         setBooking(data);
@@ -210,7 +252,7 @@ const App = () => {
     }
 
     if (errorList.length < 1) {
-      axios.post(`${url}`, newData)
+      axios.post(`${url}booking`, newData)
         .then(response => {
           const data = response.data;
           setBooking(data);
@@ -243,6 +285,8 @@ const App = () => {
     if (idleTimer !== 0) {
       clearInterval(idleTimer);
       refreshData()
+      refreshUsers()
+      refreshBoat()
     }
     idleTimer=0
   }
@@ -299,7 +343,7 @@ const App = () => {
           </Alert>
         }
       </div>
-      <small class="version">v {packageJson.version}</small>
+      <small class="version">v {version}</small>
     </div>
   );
 }

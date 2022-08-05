@@ -34,9 +34,7 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --re
 
 
 # ToDo
-* Show Refresh indicator
-* Boot through GUI
-
+* Update GUI updater
 
 mid=bootid
 rid=bookingid
