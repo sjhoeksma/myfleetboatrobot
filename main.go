@@ -784,7 +784,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	}
 
 	//Check if we would be allowed booking, we need to be after Sunrise
-	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration+refreshInterval)*time.Minute).Unix() < boatList.SunRise {
+	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
 		if b.State != "Waiting" {
 			b.Message = "Time before Sunrise"
 			b.State = "Waiting"
