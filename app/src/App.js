@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import MaterialTable from 'material-table';
 import './App.css';
 import axios from 'axios';
-import { Alert, AlertTitle } from '@material-ui/lab';
+import { Alert, AlertTitle,Autocomplete} from '@material-ui/lab'
+import { TextField} from '@material-ui/core'
 import packageJson from '../package.json';
 import ActivityDetector from 'react-activity-detector';
 
 var url = "http://localhost:1323/booking"
+var urlBoat = "http://localhost:1323/boat"
 if (process.env.NODE_ENV === 'production') {
   url = "/booking"
+  urlBoat = "/boat"
 }
 
 var idleTimer = 0
@@ -16,13 +19,33 @@ var idleTimer = 0
 const App = () => {
 
   const [booking, setBooking] = useState([]);
+  const [boat, setBoat] = useState([]);
   const [iserror, setIserror] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
 
   let columns = [
     { title: 'Id', field: 'id', hidden: true },
-    { title: 'Boot', field: 'boat', editable : 'onAdd'
+    { title: 'Boot', field: 'boat', editable : 'onAdd',
      //, lookup: {"lynx": "Lynx", "sneep": "Sneep"}
+     render: rowData => <p>{rowData.boat}</p>,
+     editComponent: props => (
+     <Autocomplete
+          freeSolo
+          id="boats"
+          options={boat}
+          renderInput={params => {
+            return (
+              <TextField
+                {...params}
+                label="Search"
+                variant="outlined"
+                fullWidth
+              />
+            );
+          }}
+          onChange={e =>props.onChange(e.target.innerText)}
+          onInputChange={e =>props.onChange(e.target.value)}
+        />)
     },
     { title: 'Datum', field: 'date' ,  type : 'date'},
     { title: 'Tijd', field: 'time', sorting :false,
@@ -53,7 +76,8 @@ const App = () => {
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
     { title: 'Gebruiker', field: 'user',  },
-    { title: 'Password', field: 'password', sorting :false , render: rowData => <p>{rowData.password.split('').map(() => '*')}</p>,
+    { title: 'Password', field: 'password', sorting :false , 
+      render: rowData => <p>{rowData.password.split('').map(() => '*')}</p>,
       editComponent: props => (
         <input
             type="password"
@@ -75,8 +99,17 @@ const App = () => {
     })
   }
 
+  const refreshBoat = () =>{
+    axios.get(`${urlBoat}`)
+    .then(res => {
+      const boat = res.data;
+      setBoat(boat);
+      //console.log(boat);
+    })
+  }
   useEffect(() => {
     refreshData()
+    refreshBoat()
    }, [])
  
 
@@ -109,7 +142,7 @@ const App = () => {
     }
 
     if (errorList.length < 1) {
-      newData.usercomment = oldData.usercomment || oldData.commment != newData.comment
+      newData.usercomment = oldData.usercomment || oldData.commment !== newData.comment
       axios.put(`${url}/${newData.id}`, newData)
         .then(response => {
           const data = response.data;

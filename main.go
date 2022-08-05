@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -24,6 +27,7 @@ import (
 var Version = "0.0.1"
 var clubId = "R1B34"
 var bookingFile = "json/booking.json"
+var boatFile = "json/boats.json"
 var timeZoneLoc = "Europe/Amsterdam"
 var timeZone = "+02:00"
 var minDuration = 60        //The minimal duration required to book
@@ -128,6 +132,7 @@ var jsonProtect bool
 var baseUrl string
 var guiUrl string
 var test string = ""
+var mutex *sync.Mutex = &sync.Mutex{}
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -271,7 +276,7 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 		})
 		basehtml.Find("img").Each(func(basesl int, baseselect *goquery.Selection) {
 			val, exists := baseselect.Attr("src")
-			//SunRise -15min
+			//SunRise -15min truncated at 15min mark
 			if exists && val == "css/solopp.gif" {
 				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "-")[0]+":00"+booking.TimeZone)
 				boatList.SunRise = thetime.Add(-time.Minute * 15).Truncate(15 * time.Minute).Unix()
@@ -416,7 +421,7 @@ func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
 			return err
 		}
 		for _, bb := range *boatList.Boats { //Array element 2 is the boat name
-			if strings.Index(bb[2], booking.Name) == 0 {
+			if strings.Contains(strings.ToLower(bb[2]), strings.ToLower(booking.Name)) {
 				//Book the boat id is element 0
 				booking.BoatId = bb[0]
 				break
@@ -507,7 +512,11 @@ func boatCancel(booking *BookingInterface) error {
 	return err
 }
 
-/*
+func confirmBoat(booking *BookingInterface) error {
+	log.Error("Confirm Boat not implemented")
+	return nil
+}
+
 //Do a update of the boat by canceling it and booking it again
 func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error {
 	err := boatCancel(booking)
@@ -516,13 +525,8 @@ func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error
 	}
 	return err
 }
-*/
 
-func confirmBoat(booking *BookingInterface) error {
-	log.Error("Confirm Boat not implemented")
-	return nil
-}
-
+/*
 func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
 
 	//Step 1: Get EportStart of GUI and the FleetID
@@ -650,14 +654,17 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	booking.EpochEnd = endTime
 	return nil
 }
+*/
 
 func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Step 2a: Check if we have a booking for the requested boat date and time
 	for _, bb := range *b.Bookings { //Array element 5 is the boat name
-		if strings.Index(bb[5], b.Name) == 0 && bb[1] == shortDate(b.Date) {
+
+		if strings.Contains(strings.ToLower(bb[5]), strings.ToLower(b.Name)) &&
+			bb[1] == shortDate(b.Date) {
 			//Check if the booking contains the commment created or specified
-			if len(bb) < 7 || bb[6] != (commentPrefix+b.Comment) {
+			if len(bb) < 7 || !strings.EqualFold(bb[6], commentPrefix+b.Comment) {
 				//log.Println("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
 				//Skip to next boat because we are not looking for this one
 				continue
@@ -707,7 +714,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					b.State = "Retry"
 				} else {
 					loc, _ := time.LoadLocation(timeZoneLoc)
-					b.Message = time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
+					b.Message = "At:" + time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
 					if b.EpochStart == newStartTime && b.EpochEnd == newEndTime {
 						b.State = "Finished"
 					} else {
@@ -749,6 +756,20 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		b.State = "Failed"
 		return true, err
 	}
+
+	//We need to check if we have the boat file, load it for the first authorized
+	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
+		boatList2, err := boatSearchByTime(b, boatList.SunRise+(24*60*60+15*60))
+		if err == nil {
+			var list []string
+			for _, bl := range *boatList2.Boats {
+				list = append(list, bl[2])
+			}
+			json_to_file, _ := json.Marshal(list)
+			ioutil.WriteFile(boatFile, json_to_file, 0644)
+			log.Info("BoatList created")
+		}
+	}
 	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
 	//Check if we have a boatList for the correct day, if not exit it
 	if boatList.EpochDate < b.EpochDate {
@@ -756,7 +777,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if b.State != "Waiting" {
 			b.Message = "Date not valid yet"
 			b.State = "Waiting"
-			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Round(15 * time.Minute).Unix()
+			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
 			return true, nil
 		}
 		return false, nil
@@ -767,7 +788,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if b.State != "Waiting" {
 			b.Message = "Time before Sunrise"
 			b.State = "Waiting"
-			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-time.Duration(bookWindow) * time.Hour).Round(15 * time.Minute).Unix()
+			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-time.Duration(bookWindow) * time.Hour).Truncate(15 * time.Minute).Unix()
 			return true, nil
 		}
 		return false, nil
@@ -800,14 +821,14 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
 	//Check if the boot is available requested period
 	for _, bb := range *boatList.Boats { //Array element 2 is the boat name
-		if strings.Index(bb[2], b.Name) == 0 {
+		if strings.Contains(strings.ToLower(bb[2]), strings.ToLower(b.Name)) {
 			//Book the boat id is element 0
 			b.BoatId = bb[0]
 			b.BoatFilter = boatFilter[bb[1]]
 			err := boatBook(b, starttime, endtime)
 			if err == nil {
 				loc, _ := time.LoadLocation(timeZoneLoc)
-				b.Message = time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
+				b.Message = "At:" + time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
 				if b.EpochStart == starttime && b.EpochEnd == endtime {
 					b.State = "Finished"
 				} else {
@@ -824,10 +845,11 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			"state":              b.State,
 			"boat":               b.Name,
 			"user":               b.Username,
-			"from":               shortDate(b.Date),
-			"to":                 shortTime(b.Time),
+			"at":                 shortDate(b.Date),
+			"from":               shortTime(b.Time),
 			"starttime":          starttime,
 			"endtime":            endtime,
+			"boatlistSunRise":    boatList.SunRise,
 			"boatlistEpochDate":  boatList.EpochDate,
 			"boatlistEpochStart": boatList.EpochStart,
 			"boatlistEpochEnd":   boatList.EpochEnd,
@@ -929,19 +951,50 @@ func login(booking *BookingInterface) error {
 	return nil
 }
 
+func readBoatJson() []string {
+	var b []string
+	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
+	file, err := ioutil.ReadFile(boatFile)
+	if err != nil {
+		log.Error(err)
+	} else {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return b
+}
+
 func readJson() BookingSlice {
 	b := BookingSlice{}
 	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
+	mutex.Lock()
 	file, err := ioutil.ReadFile(bookingFile)
+	mutex.Unlock()
 	if err != nil {
 		log.Error(err)
-		return b
-	}
-	err = json.Unmarshal(file, &b)
-	if err != nil {
-		log.Error(err)
+	} else {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			//We have a error try to recover the backup file
+			log.Error(err)
+			if _, err := os.Stat(bookingFile + ".bak"); errors.Is(err, os.ErrNotExist) {
+				writeJson(b)
+			} else {
+				mutex.Lock()
+				file, _ = ioutil.ReadFile(bookingFile + ".bak")
+				mutex.Unlock()
+				err = json.Unmarshal(file, &b)
+				if err != nil {
+					writeJson(b)
+				}
+			}
+		}
 	}
 	return b
 }
@@ -959,14 +1012,17 @@ func writeJson(data BookingSlice) {
 				"state": data[i].State,
 				"boat":  data[i].Name,
 				"user":  data[i].Username,
-				"from":  shortDate(data[i].Date),
-				"to":    shortTime(data[i].Time),
+				"at":    shortDate(data[i].Date),
+				"from":  shortTime(data[i].Time),
 			}).Info("Deleting")
 			data = append(data[:i], data[i+1:]...)
 		}
 	}
 	json_to_file, _ := json.Marshal(data)
+	mutex.Lock()
+	os.Rename(bookingFile, bookingFile+".bak")
 	err := ioutil.WriteFile(bookingFile, json_to_file, 0644)
+	mutex.Unlock()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -999,6 +1055,10 @@ func jsonServer() error {
 		bookings := readJson()
 
 		return c.JSON(http.StatusOK, bookings)
+	})
+	e.GET("/boat", func(c echo.Context) error {
+		boats := readBoatJson()
+		return c.JSON(http.StatusOK, boats)
 	})
 
 	e.GET("/booking/:id", func(c echo.Context) error {
@@ -1038,6 +1098,12 @@ func jsonServer() error {
 
 		bookings = append(bookings, *new_booking)
 		writeJson(bookings)
+		log.WithFields(log.Fields{
+			"boat": new_booking.Name,
+			"user": new_booking.Username,
+			"at":   shortDate(new_booking.Date),
+			"from": shortTime(new_booking.Time),
+		}).Info("Added boat")
 
 		return c.JSON(http.StatusOK, bookings)
 	})
@@ -1059,6 +1125,12 @@ func jsonServer() error {
 			thetime, _ := time.Parse(time.RFC3339, updated_booking.Time)
 			updated_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
 		}
+		log.WithFields(log.Fields{
+			"boat": updated_booking.Name,
+			"user": updated_booking.Username,
+			"at":   shortDate(updated_booking.Date),
+			"from": shortTime(updated_booking.Time),
+		}).Info("Updated boat")
 
 		for i, booking := range bookings {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
@@ -1086,8 +1158,8 @@ func jsonServer() error {
 						"state": booking.State,
 						"boat":  booking.Name,
 						"user":  booking.Username,
-						"from":  shortDate(booking.Date),
-						"to":    shortTime(booking.Time),
+						"at":    shortDate(booking.Date),
+						"from":  shortTime(booking.Time),
 					}).Info("Deleting")
 					bookings = append(bookings[:i], bookings[i+1:]...)
 					writeJson(bookings)
@@ -1208,23 +1280,35 @@ func bookLoop() {
 				booking.State = "Error"
 				booking.Message = err.Error()
 				vchanged = true
-				log.Error(err)
 			}
 
 			//If data has been changed update the booking array
 			if vchanged {
 				changed = true
 				//Sleep the booking for at least 15 min
-				booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Unix())
+				booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
 				bookingSlice[i] = booking
-				log.WithFields(log.Fields{
-					"state": booking.State,
-					"boat":  booking.Name,
-					"user":  booking.Username,
-					"from":  shortDate(booking.Date),
-					"to":    shortTime(booking.Time),
-				}).Info(booking.Message)
-				//log.Println(booking.State,booking.State, booking.Username, shortDate(booking.Date), shortTime(booking.Time))
+				loc, _ := time.LoadLocation(timeZoneLoc)
+				nextStr := time.Unix(booking.EpochNext, 0).In(loc).Format("15:04")
+				if err != nil {
+					log.WithFields(log.Fields{
+						"state": booking.State,
+						"boat":  booking.Name,
+						"user":  booking.Username,
+						"at":    shortDate(booking.Date),
+						"from":  shortTime(booking.Time),
+						"next":  shortTime(nextStr),
+					}).Error(err)
+				} else {
+					log.WithFields(log.Fields{
+						"state": booking.State,
+						"boat":  booking.Name,
+						"user":  booking.Username,
+						"at":    shortDate(booking.Date),
+						"from":  shortTime(booking.Time),
+						"next":  shortTime(nextStr),
+					}).Info(booking.Message)
+				}
 			}
 
 			//Step 3: logout
@@ -1241,12 +1325,20 @@ func bookLoop() {
 			break
 		}
 		//We sleep before we restart, where we align as close as possible to interval, but always 5 sec for offset
-		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(5*time.Second).Unix() - time.Now().Unix()))
+		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(5*time.Second).Unix()-time.Now().Unix()) * time.Second)
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }
 
 func main() {
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		log.Println("Waiting for clean Exit")
+		mutex.Lock()
+		os.Exit(1)
+	}()
 	log.SetFormatter(&log.TextFormatter{DisableColors: false, FullTimestamp: true})
 	//log.SetFormatter(&log.JSONFormatter{DisableColors: false, FullTimestamp: true,})
 	Init()
@@ -1259,7 +1351,7 @@ func main() {
 	} else {
 		switch test {
 		case "login_response":
-			file, _ := ioutil.ReadFile("login-response.html")
+			file, _ := ioutil.ReadFile("html/login-response.html")
 			str := string(file)
 			log.Println("login_response", readbookingList(&str))
 		case "update":
@@ -1272,6 +1364,19 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
+		case "boatlist":
+			file, _ := ioutil.ReadFile("html/boot-response.html")
+			str := string(file)
+			booking := BookingInterface{}
+			boatlist := BoatListInterface{}
+			readboatList(&booking, &boatlist, &str)
+			var list []string
+			for _, b := range *boatlist.Boats {
+				list = append(list, b[2])
+			}
+			log.Println("boatlist", list)
+			json_to_file, _ := json.Marshal(list)
+			ioutil.WriteFile(boatFile, json_to_file, 0644)
 		default:
 			bookLoop()
 		}

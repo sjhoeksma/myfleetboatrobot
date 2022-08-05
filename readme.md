@@ -34,9 +34,9 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --re
 
 
 # ToDo
-* Bootlist instead of input
 * Show Refresh indicator
 * Boot through GUI
+
 
 mid=bootid
 rid=bookingid
