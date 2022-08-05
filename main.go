@@ -953,6 +953,7 @@ func login(booking *BookingInterface) error {
 
 func readBoatJson() []string {
 	var b []string
+	b = append(b, "No Boats")
 	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
