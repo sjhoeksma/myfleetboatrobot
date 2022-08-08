@@ -32,6 +32,7 @@ const App = () => {
           freeSolo
           id="boats"
           options={boat}
+          value={props.value}
           renderInput={params => {
             return (
               <TextField
@@ -40,8 +41,8 @@ const App = () => {
               />
             );
           }}
-          onChange={e =>props.onChange(e.target.innerText)}
-          onInputChange={e =>props.onChange(e.target.value)}
+          onChange={e =>{if (e) props.onChange(e.target.innerText)}}
+          onInputChange={e =>{if (e) props.onChange(e.target.value)}}
         />)
     },
     { title: 'Datum', field: 'date' ,  type : 'date'},
@@ -49,7 +50,6 @@ const App = () => {
       // type : 'time',
       initialEditValue : "09:30",
       lookup: {
-       
         "08:00" : "08:00",  "08:15" : "08:15", "08:30" : "08:30", "08:45" : "08:45",
         "09:00" : "09:00",  "09:15" : "09:15", "09:30" : "09:30", "09:45" : "09:45",
         "10:00" : "10:00",  "10:15" : "10:15", "10:30" : "10:30", "10:45" : "10:45",
@@ -65,47 +65,90 @@ const App = () => {
         "20:00" : "20:00",  "20:15" : "20:15", "20:30" : "20:30", "20:45" : "20:45",
         "21:00" : "21:00",  "21:15" : "21:15", "21:30" : "21:30", "21:45" : "21:45",
         "22:00" : "22:00",  "22:15" : "22:15", "22:30" : "22:30", "22:45" : "22:45",
-        "05:00" : "05:00",  "05:15" : "05:15", "05:30" : "05:30", "05:45" : "05:45",
+        "07:00" : "07:00",  "07:15" : "07:15", "07:30" : "07:30", "07:45" : "07:45",
         "06:00" : "06:00",  "06:15" : "06:15", "06:30" : "06:30", "06:45" : "06:45",
-        "07:00" : "07:00",  "07:15" : "07:15", "07:30" : "07:30", "07:45" : "07:45"
+        "05:00" : "05:00",  "05:15" : "05:15", "05:30" : "05:30", "05:45" : "05:45"
        }
      },
     { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
     { title: 'Gebruiker', field: 'user',  
+     //render: rowData => <p>{usr}</p>,
      editComponent: props => (
       <Autocomplete
            freeSolo
-           id="user"
+           id="userid"
            options={users}
-           getOptionLabel={(option) => option.user}
-           renderInput={params => {
-             return (
-               <TextField
-                 {...params}
-                 fullWidth
-               />
-             );
-           }}
-           onChange={e =>{
-            for(var i=0; i<users.length; i++) {
-              if (users[i]["user"] === e.target.innerText) {
-                 props.rowData["password"] = users[i]["password"]
-                break
+           getOptionLabel={(option) => { 
+            return (!option || typeof option === "string" || option instanceof String) ? option: option.user
+          }}
+           value={props.value}
+           onChange={(e,v) =>{
+            if (e && e.target && e.target.innerText) {
+              for(var i=0; i<users.length; i++) {
+                if (users[i]["user"] === e.target.innerText.toUpperCase() && 
+                  props.rowData["password"] !== users[i]["password"]) {
+                    props.rowData["password"] = users[i]["password"]
+                }
+              }
+              props.onChange(e.target.innerText)
+            } else {
+              props.onChange(v)
+            }
+          }}
+           onInputChange={(e,v) =>{
+            if (e && e.target && e.target.value) {
+              for(var i=0; i<users.length; i++) {
+                if (users[i]["user"] === e.target.value.toUpperCase() && 
+                  props.rowData["password"] !== users[i]["password"]) {
+                    props.rowData["password"] = users[i]["password"]
+                }
+              }
+               props.onChange(e.target.value)
+            } else {
+              props.onChange(v)
+            }
+          }}
+           /*
+           onChange={(e,v) =>{
+            if (e && v) {
+              var u = (typeof v === "string" || v instanceof String) ? v : v.user
+              for(var i=0; i<users.length; i++) {
+                console.log(v)
+                if (users[i]["user"] === u.toUpperCase() && 
+                  props.rowData["password"] !== users[i]["password"]) {
+                  setPwd(users[i].password)
+                  setUsr(users[i].user)
+                }
               }
             }
-            return props.onChange(e.target.innerText)}
-          }
-           onInputChange={e =>props.onChange(e.target.value)}
+          }}
+           onInputChange={(e,v) =>{
+            if (e && v) {
+              for(var i=0; i<users.length; i++) {
+                if (users[i]["user"] === v.toUpperCase() && 
+                  props.rowData["password"] !== users[i]["password"]) {
+                  setPwd(users[i]["password"])
+                }
+              }
+            }
+          }}
+          */
+          renderInput={(params) => (
+            <TextField {...params}   
+            fullWidth
+             
+            />
+           )}
          />)
     },
     { title: 'Password', field: 'password', sorting :false , 
       render: rowData => <p>{rowData.password.split('').map(() => '*')}</p>,
       editComponent: props => (
-        <TextField
+        <TextField 
             type="password"
             value={props.value}
-            onChange={e => props.onChange(e.target.value)}
+            onChange={e => props.onChange(e.target.value)} 
         />) },
     { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
     { title: 'UserCommentaar', field: 'usercomment', hidden: true ,type : 'boolean' },
@@ -159,15 +202,15 @@ const App = () => {
   const handleRowUpdate = (newData, oldData, resolve,reject) => {
     //validating the data inputs
     let errorList = []
-    if (!('password' in newData) || newData.password === "") {
+    if (!('password' in newData) || newData.password === ""  || newData.password === null) {
       errorList.push("Try Again, You didn't enter the Password field")
     }
-    if (!('user' in newData) || newData.user === "") {
+    if (!('user' in newData) || newData.user === "" || newData.user == null) {
       errorList.push("Try Again, You didn't enter the User field")
     } else  {
      newData.user = newData.user.toUpperCase() 
     }
-    if (!('boat' in newData) || newData.boat === "") {
+    if (!('boat' in newData) || newData.boat === "" || newData.boat === null) {
       errorList.push("Try Again, You didn't enter the Boat field")
     }
     if (!('date' in newData) || newData.date === "") {
@@ -228,15 +271,15 @@ const App = () => {
   const handleRowAdd = (newData, resolve, reject) => {
     //validating the data inputs
     let errorList = []
-    if (!('password' in newData) || newData.password === "") {
+    if (!('password' in newData) || newData.password === ""  || newData.password === null) {
       errorList.push("Try Again, You didn't enter the Password field")
     }
-    if (!('user' in newData) || newData.user === "") {
+    if (!('user' in newData) || newData.user === "" || newData.user === null) {
       errorList.push("Try Again, You didn't enter the User field")
     } else  {
      newData.user = newData.user.toUpperCase() 
     }
-    if (!('boat' in newData) || newData.boat === "") {
+    if (!('boat' in newData) || newData.boat === "" || newData.boat === null) {
       errorList.push("Try Again, You didn't enter the Boat field")
     }
     if (!('date' in newData) || newData.date === "") {

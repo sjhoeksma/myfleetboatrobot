@@ -22,9 +22,10 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/slices"
 )
 
-var Version = "0.2.7"
+var Version = "0.2.8"
 var clubId = "R1B34"
 var bookingFile = "json/booking.json"
 var boatFile = "json/boats.json"
@@ -88,6 +89,7 @@ var maandFilter = map[string]string{
 type UserInterface struct {
 	Username string `json:"user"`
 	Password string `json:"password"`
+	LastUsed int64  `json:"lastused"`
 }
 
 //Struc used to store boat and session info
@@ -533,9 +535,7 @@ func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error
 	return err
 }
 
-/*
-func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
-
+func guiSession() ([]*http.Cookie, int64, string, error) {
 	//Step 1: Get EportStart of GUI and the FleetID
 	var guiEpochStart int64
 	var guiFleetId string
@@ -544,7 +544,7 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return nil, guiEpochStart, guiFleetId, err
 	}
 	defer response.Body.Close()
 	cookies := response.Cookies()
@@ -558,7 +558,7 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 			if exists && val == "start" {
 				val, exists = basein.Attr("value")
 				if exists {
-					theTime, err := time.Parse(time.RFC3339, (strings.Fields(val)[0])+"T"+(strings.Fields(val)[1])+":00"+booking.TimeZone)
+					theTime, err := time.Parse(time.RFC3339, (strings.Fields(val)[0])+"T"+(strings.Fields(val)[1])+":00"+timeZone)
 					if err == nil {
 						guiEpochStart = theTime.Unix()
 					}
@@ -576,7 +576,18 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 		}
 	})
 	if guiFleetId == "" || guiEpochStart == 0 {
-		return errors.New("guiFleetId or guiEpochStart not found")
+		return cookies, guiEpochStart, guiFleetId, errors.New("guiFleetId or guiEpochStart not found")
+	}
+	return cookies, guiEpochStart, guiFleetId, nil
+}
+
+/*
+func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
+
+    //STEP: Session
+	cookies,guiEpochStart,guiFleetId,err := guiSession()
+    if err != nil {
+		return err
 	}
 
 	//STEP : Reference
@@ -786,24 +797,11 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		return true, err
 	}
 
-	//We need to check if we have the boat file, load it for the first authorized
-	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
-		boatList2, err := boatSearchByTime(b, boatList.SunRise+(24*60*60+15*60))
-		if err == nil {
-			var list []string
-			for _, bl := range *boatList2.Boats {
-				list = append(list, bl[2])
-			}
-			json_to_file, _ := json.Marshal(list)
-			ioutil.WriteFile(boatFile, json_to_file, 0644)
-			log.Info("BoatList created")
-		}
-	}
 	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
 	//Check if we have a boatList for the correct day, if not exit it
 	if boatList.EpochDate < b.EpochDate {
 		//log.Println("Date not valid yet", boatList.EpochDate, b.EpochDate)
-		if b.State != "Waiting" {
+		if b.State != "Waiting" && b.Message != "Date not valid yet" {
 			b.Message = "Date not valid yet"
 			b.State = "Waiting"
 			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
@@ -814,13 +812,10 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Check if we would be allowed booking, we need to be after Sunrise
 	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
-		if b.State != "Waiting" {
-			b.Message = "Time before Sunrise"
-			b.State = "Waiting"
-			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-time.Duration(bookWindow) * time.Hour).Truncate(15 * time.Minute).Unix()
-			return true, nil
-		}
-		return false, nil
+		b.Message = "Starttime before Sunrise"
+		b.State = "Waiting"
+		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(time.Duration(minDuration) * time.Hour).Truncate(15 * time.Minute).Unix()
+		return true, nil
 	}
 
 	//Calculate the minimal start and end time
@@ -830,7 +825,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Check if we are allowed to book this
 	if endtime-starttime < int64(minDuration*60) {
-		if b.State != "Waiting" {
+		if b.State != "Waiting" && !strings.Contains(b.Message, "Time between start and end") {
 			b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
 			b.State = "Waiting"
 			b.EpochNext = time.Now().Unix() - (endtime - starttime)
@@ -983,9 +978,65 @@ func login(booking *BookingInterface) error {
 func readBoatJson() []string {
 	var b []string
 	b = append(b, "No Boats")
-	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
+	fs, err := os.Stat(boatFile)
+	//We need to check if we have the boat file, load it for the first authorized
+	if errors.Is(err, os.ErrNotExist) || !fs.ModTime().After(time.Now().Add(24*time.Hour)) {
+		cookies, _, guiFleetId, err := guiSession()
+		if err != nil {
+			log.Error("GuiSession Failed", err)
+			return b
+		}
+		request, _ := http.NewRequest(http.MethodGet, guiUrl, nil)
+		values := request.URL.Query()
+		values.Set("a", "c")
+		values.Set("uniq", guiFleetId)
+		request.URL.RawQuery = values.Encode()
+		for _, o := range cookies {
+			request.AddCookie(o)
+		}
+		client := &http.Client{}
+		response, err := client.Do(request)
+		if err != nil {
+			log.Error("Client session fleet script", err)
+			return b
+		}
+		defer response.Body.Close()
+		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+			log.Error("Retrieve fleet script", err)
+			return b
+		}
+		bd, _ := io.ReadAll(response.Body)
+		str := string(bd)
+		re := regexp.MustCompile(`var info=(.*);`)
+		rem := re.FindStringSubmatch(str)
+		if len(rem) > 0 {
+			b = []string{}
+			btl := strings.Split(rem[1], "<b>Bootnaam<\\/b>: ")
+			for _, bt := range btl {
+				bs := strings.Split(bt, "<br")
+				if len(bs) > 1 {
+					if !slices.Contains(b, strings.TrimSpace(bs[0])) {
+						b = append(b, strings.TrimSpace(bs[0]))
+					}
+				}
+			}
+			if _, err := os.Stat(boatFile); os.IsNotExist(err) {
+				err := os.MkdirAll(filepath.Dir(boatFile), 0644) // Create your file
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+			json_to_file, _ := json.Marshal(b)
+			mutex.Lock()
+			err := ioutil.WriteFile(boatFile, json_to_file, 0644)
+			mutex.Unlock()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 		return b
 	}
+
 	file, err := ioutil.ReadFile(boatFile)
 	if err != nil {
 		log.Error(err)
@@ -1006,9 +1057,7 @@ func readUsersJson() []UserInterface {
 		return b
 	}
 	file, err := ioutil.ReadFile(userFile)
-	if err != nil {
-		log.Error(err)
-	} else {
+	if err == nil {
 		err = json.Unmarshal(file, &b)
 		if err != nil {
 			log.Error(err)
@@ -1053,6 +1102,11 @@ func writeUsersJson(data []UserInterface) {
 		err := os.MkdirAll(filepath.Dir(userFile), 0644) // Create your file
 		if err != nil {
 			log.Fatal(err)
+		}
+	}
+	for i := len(data) - 1; i >= 0; i-- {
+		if data[i].Username == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
+			data = append(data[:i], data[i+1:]...)
 		}
 	}
 	json_to_file, _ := json.Marshal(data)
@@ -1179,24 +1233,19 @@ func jsonServer() error {
 
 		//Add password to user file
 		users := readUsersJson()
-		var changed int = 0
+		var found bool = false
 		for i, usr := range users {
-			if usr.Username == new_booking.Username {
-				if users[i].Password != new_booking.Password {
-					users[i].Password = new_booking.Password
-					changed = 1
-				} else {
-					changed = -1
-				}
+			if strings.EqualFold(usr.Username, new_booking.Username) {
+				users[i].Password = new_booking.Password
+				users[i].LastUsed = time.Now().Unix()
+				found = true
 				break
 			}
 		}
-		if changed == 0 {
-			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password})
+		if !found {
+			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password, LastUsed: time.Now().Unix()})
 		}
-		if changed >= 0 {
-			writeUsersJson(users)
-		}
+		writeUsersJson(users)
 
 		return c.JSON(http.StatusOK, bookings)
 	})
@@ -1224,6 +1273,22 @@ func jsonServer() error {
 			"at":   shortDate(updated_booking.Date),
 			"from": shortTime(updated_booking.Time),
 		}).Info("Updated boat")
+
+		//Add password to user file
+		users := readUsersJson()
+		var found bool = false
+		for i, usr := range users {
+			if strings.EqualFold(usr.Username, updated_booking.Username) {
+				users[i].Password = updated_booking.Password
+				users[i].LastUsed = time.Now().Unix()
+				found = true
+				break
+			}
+		}
+		if !found {
+			users = append(users, UserInterface{Username: updated_booking.Username, Password: updated_booking.Password, LastUsed: time.Now().Unix()})
+		}
+		writeUsersJson(users)
 
 		for i, booking := range bookings {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
@@ -1456,18 +1521,8 @@ func main() {
 				log.Fatal(err)
 			}
 		case "boatlist":
-			file, _ := ioutil.ReadFile("html/boot-response.html")
-			str := string(file)
-			booking := BookingInterface{}
-			boatlist := BoatListInterface{}
-			readboatList(&booking, &boatlist, &str)
-			var list []string
-			for _, b := range *boatlist.Boats {
-				list = append(list, b[2])
-			}
-			log.Println("boatlist", list)
-			json_to_file, _ := json.Marshal(list)
-			ioutil.WriteFile(boatFile, json_to_file, 0644)
+			os.Remove(boatFile)
+			log.Println("BoatList", readBoatJson())
 		default:
 			bookLoop()
 		}
