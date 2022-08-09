@@ -25,7 +25,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.2.10"                //The version of application
+var Version = "0.2.11"                //The version of application
 var clubId = "R1B34"                  //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
@@ -770,7 +770,7 @@ func readBoatJson() []string {
 	b = append(b, "No Boats")
 	fs, err := os.Stat(boatFile)
 	//We need to check if we have the boat file, load it for the first authorized
-	if errors.Is(err, os.ErrNotExist) || !fs.ModTime().After(time.Now().Add(24*time.Hour)) {
+	if errors.Is(err, os.ErrNotExist) || !fs.ModTime().After(time.Now().Add(-24*time.Hour)) {
 		cookies, _, guiFleetId, err := guiSession()
 		if err != nil {
 			log.Error("GuiSession Failed", err)
