@@ -25,7 +25,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.0"                 //The version of application
+var Version = "0.2.10"                //The version of application
 var clubId = "R1B34"                  //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
@@ -544,6 +544,95 @@ func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error
 	return err
 }
 
+/*
+func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
+	//STEP: Session
+	cookies, guiEpochStart, _, err := guiSession()
+	if err != nil {
+		return err
+	}
+
+	//STEP: Create Reference to the booking
+	request, err := http.NewRequest(http.MethodGet, guiUrl, nil)
+	values := request.URL.Query()
+	values.Set("a", "e")
+	values.Set("menu", "Rmenu")
+	values.Set("extrainfo", "mid="+booking.BoatId+
+		"&co=0&rid="+booking.BookingId+
+		"&from="+strconv.FormatInt(int64((booking.EpochStart-guiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0")
+	request.URL.RawQuery = values.Encode()
+	for _, o := range cookies {
+		request.AddCookie(o)
+	}
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+
+	//Step 2: Login to the reference
+	data := url.Values{}
+	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-guiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-guiEpochStart+booking.Duration*60)/(15*60)), 10))
+	data.Set("clubcode", "")
+	data.Set("username", booking.Username)
+	data.Set("password", booking.Password)
+	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Rmenu&page=1_modifylogbook", strings.NewReader(data.Encode()))
+	for _, o := range cookies {
+		request.AddCookie(o)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("DNT", "1")
+	//request.Header.Set("Referer", rawQuery)
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+	//Check if the boat is the boat we where looking for
+
+	//STEP: Update the booking
+	data = url.Values{}
+	data.Set("newStart", strconv.FormatInt(int64((startTime-guiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((endTime-guiEpochStart)/(15*60)), 10))
+	data.Set("comment", commentPrefix+booking.Comment)
+	data.Set("page", "3_commit")
+	data.Set("act", "Ok")
+	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Amenu", strings.NewReader(data.Encode()))
+	for _, o := range cookies {
+		request.AddCookie(o)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("DNT", "1")
+	//request.Header.Set("Referer", rawQuery)
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+
+	//booking.EpochStart = startTime
+	//booking.EpochEnd = endTime
+	return nil
+}
+*/
+
 //Create a gui session to work on
 func guiSession() ([]*http.Cookie, int64, string, error) {
 	//Step 1: Get EportStart of GUI and the FleetID
@@ -590,99 +679,6 @@ func guiSession() ([]*http.Cookie, int64, string, error) {
 	}
 	return cookies, guiEpochStart, guiFleetId, nil
 }
-
-/*
-func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
-
-    //STEP: Session
-	cookies,guiEpochStart,guiFleetId,err := guiSession()
-    if err != nil {
-		return err
-	}
-
-	//STEP : Reference
-	request, err = http.NewRequest(http.MethodGet, guiUrl, nil)
-	values := request.URL.Query()
-	values.Set("a", "e")
-	values.Set("menu", "Rmenu")
-	values.Set("extrainfo", "mid="+booking.BoatId+
-		"&co=0&rid="+booking.BookingId+
-		"&from="+strconv.FormatInt(int64((booking.EpochStart-guiEpochStart)/(15*60)), 10)+
-		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0")
-	rawQuery := values.Encode()
-	request.URL.RawQuery = rawQuery
-	for _, o := range cookies {
-		request.AddCookie(o)
-	}
-	if err != nil {
-		return err
-	}
-	client = &http.Client{}
-	response, err = client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-
-	//Step 2: Login
-	data := url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-guiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-guiEpochStart+booking.Duration*60)/(15*60)), 10))
-	data.Set("clubcode", "")
-	data.Set("username", booking.Username)
-	data.Set("password", booking.Password)
-	//log.Println("Old Val", data.Encode())
-	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Rmenu&page=1_modifylogbook", strings.NewReader(data.Encode()))
-	for _, o := range cookies {
-		request.AddCookie(o)
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	request.Header.Set("Referer", rawQuery)
-	client = &http.Client{}
-	response, err = client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-	//Check if the boat is the boat we where looking for
-
-	//STEP: Update
-	data = url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((startTime-guiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((endTime-guiEpochStart)/(15*60)), 10))
-	data.Set("comment", commentPrefix+booking.Comment)
-	data.Set("page", "3_commit")
-	data.Set("act", "Ok")
-	//log.Println("New Val", data.Encode())
-
-	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Amenu", strings.NewReader(data.Encode()))
-	for _, o := range cookies {
-		request.AddCookie(o)
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	request.Header.Set("Referer", rawQuery)
-	client = &http.Client{}
-	response, err = client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-	booking.EpochStart = startTime
-	booking.EpochEnd = endTime
-	return nil
-}
-*/
 
 //Logout for the specified booking
 func logout(booking *BookingInterface) error {
@@ -1087,7 +1083,8 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
 		b.Message = "Starttime before Sunrise"
 		b.State = "Waiting"
-		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
+		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Unix()
+		//b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow) * time.Hour)).Truncate(15 * time.Minute).Unix()
 		return true, nil
 	}
 
