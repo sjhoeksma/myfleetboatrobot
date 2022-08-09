@@ -35,8 +35,9 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --re
 
 # ToDo
 * Update GUI updater
-* change version to config, response so main can set app values
 
+
+## Gui Info for booking
 mid=bootid
 rid=bookingid
 from=
@@ -56,8 +57,8 @@ FORDATA
 newStart: 170
 newEnd: 176
 clubcode: 
-username: SP..
-password: SP..
+username: ..
+password: ..
 POST https://my-fleet.eu/R1B34/gui/index.php?a=e&menu=Amenu
 FORMDATA
 newStart: 171

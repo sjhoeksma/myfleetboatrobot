@@ -25,19 +25,20 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.2.9"
-var clubId = "R1B34"
-var bookingFile = "json/booking.json"
-var boatFile = "json/boats.json"
-var userFile = "json/users.json"
-var timeZoneLoc = "Europe/Amsterdam"
-var timeZone = "+02:00"
-var minDuration = 60        //The minimal duration required to book
-var maxDuration = 120       //The maximal duration allowed to book
-var bookWindow = 48         //The number of hours allowed to book
-var maxRetry int = 0        //The maximum numbers of retry before we give up, 0=disabled
-var refreshInterval int = 1 //We do a check of the database every 1 minute
+var Version = "0.3.0"                 //The version of application
+var clubId = "R1B34"                  //The club code
+var bookingFile = "json/booking.json" //The json file to store bookings in
+var boatFile = "json/boats.json"      //The json file to store boats
+var userFile = "json/users.json"      //The json file to store users
+var timeZoneLoc = "Europe/Amsterdam"  //The time zone location for the club
+var timeZone = "+02:00"               //The time zone in hour, is also calculated
+var minDuration = 60                  //The minimal duration required to book
+var maxDuration = 120                 //The maximal duration allowed to book
+var bookWindow = 48                   //The number of hours allowed to book
+var maxRetry int = 0                  //The maximum numbers of retry before we give up, 0=disabled
+var refreshInterval int = 1           //We do a check of the database every 1 minute
 
+//Convert boat to code
 var boatFilter = map[string]string{
 	"Alle boten": "0",
 	"1x":         "1",
@@ -71,6 +72,7 @@ var boatFilter = map[string]string{
 	"Zeilwherry": "57",
 }
 
+//Used to convert months into date
 var maandFilter = map[string]string{
 	"januari":   "01",
 	"februari":  "02",
@@ -86,6 +88,7 @@ var maandFilter = map[string]string{
 	"december":  "12",
 }
 
+//Struc used to store user info
 type UserInterface struct {
 	Username string `json:"user"`
 	Password string `json:"password"`
@@ -119,8 +122,10 @@ type BookingInterface struct {
 	Authorized  bool           `json:"-"`
 }
 
+//The list of bookings
 type BookingSlice []BookingInterface
 
+//The struct used to retreive available boats
 type BoatListInterface struct {
 	BoatFilter string
 	SunRise    int64
@@ -131,16 +136,16 @@ type BoatListInterface struct {
 	Boats      *[][]string
 }
 
-var singleRun bool = true
-var commentPrefix string = "#:"
-var bindAddress string = ":1323"
-var jsonUser string
-var jsonPwd string
-var jsonProtect bool
-var baseUrl string
-var guiUrl string
-var test string = ""
-var mutex *sync.Mutex = &sync.Mutex{}
+var singleRun bool = true             //Should we do a single runonly = nowebserver
+var commentPrefix string = "#:"       //The prefix we use as a comment indicator the booking is ours
+var bindAddress string = ":1323"      //The default bind port of web server
+var jsonUser string                   //The Basic Auth user of webserer
+var jsonPwd string                    //The Basic Auth password of webserver
+var jsonProtect bool                  //Should the web server use Basic Auth
+var baseUrl string                    //The base url towards the fleet.eu backend
+var guiUrl string                     //The gui url towards the fleet.eu backend
+var test string = ""                  //The test we should be running, means allways single ru
+var mutex *sync.Mutex = &sync.Mutex{} //The lock used where writing files
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -158,6 +163,7 @@ func MaxInt64(a, b int64) int64 {
 	return b
 }
 
+//Function to get an ENV variable and put it into a string
 func setEnvValue(key string, item *string) {
 	s := os.Getenv(key)
 	if s != "" {
@@ -165,10 +171,12 @@ func setEnvValue(key string, item *string) {
 	}
 }
 
+//Make from a long date string a short one
 func shortDate(date string) string {
 	return strings.Split(date, "T")[0]
 }
 
+//Make from a long data string as short time
 func shortTime(timeS string) string {
 	if strings.Contains(timeS, "T") {
 		thetime, _ := time.Parse(time.RFC3339, timeS)
@@ -181,7 +189,6 @@ func shortTime(timeS string) string {
 
 //Read and set settings
 func Init() {
-
 	setEnvValue("JSONUSR", &jsonUser)
 	setEnvValue("JSONPWD", &jsonPwd)
 	setEnvValue("PREFIX", &commentPrefix)
@@ -491,6 +498,7 @@ func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
 	return err
 }
 
+//Cancel a booking
 func boatCancel(booking *BookingInterface) error {
 	data := url.Values{}
 	data.Set("action", "edit")
@@ -521,6 +529,7 @@ func boatCancel(booking *BookingInterface) error {
 	return err
 }
 
+//Confirm a booking
 func confirmBoat(booking *BookingInterface) error {
 	log.Error("Confirm Boat not implemented")
 	return nil
@@ -535,6 +544,7 @@ func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error
 	return err
 }
 
+//Create a gui session to work on
 func guiSession() ([]*http.Cookie, int64, string, error) {
 	//Step 1: Get EportStart of GUI and the FleetID
 	var guiEpochStart int64
@@ -674,6 +684,269 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 }
 */
 
+//Logout for the specified booking
+func logout(booking *BookingInterface) error {
+	var err error
+	if len(booking.Cookies) != 0 {
+		var request *http.Request
+		data := url.Values{}
+		data.Set("action", "logout")
+		data.Set("exec", "")
+		data.Set("id", "")
+		request, err = http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
+		for _, o := range booking.Cookies {
+			request.AddCookie(o)
+		}
+		if err != nil {
+			return err
+		}
+		client := &http.Client{}
+		response, err := client.Do(request)
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+			return errors.New("HTTP Status is out of the 2xx range")
+		}
+		booking.Cookies = response.Cookies()
+	}
+	return err
+}
+
+//Login for the specified booking and save the required cookie
+func login(booking *BookingInterface) error {
+	var err error
+	var request *http.Request
+	booking.Authorized = false
+	//Step 1: Get Cookie
+	var webUrl string = "https://my-fleet.eu/" + clubId + "/text/index.php?clubname=rvs&variant="
+	request, err = http.NewRequest(http.MethodGet, webUrl, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+	booking.Cookies = response.Cookies()
+	if len(booking.Cookies) == 0 {
+		return errors.New("no session cookie")
+	}
+
+	//Step 2: It we will get the main pages including the bookinglist
+	data := url.Values{}
+	data.Set("action", "new")
+	data.Set("exec", "")
+	data.Set("id", "")
+	data.Set("username", booking.Username)
+	data.Set("password", booking.Password)
+	request, err = http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
+	if err != nil {
+		return err
+	}
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	response, err = client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+	b, _ := io.ReadAll(response.Body)
+	str := string(b)
+	booking.Bookings = readbookingList(&str)
+	booking.Authorized = true
+	return nil
+}
+
+//Read the boat list and create it if not found
+func readBoatJson() []string {
+	var b []string
+	b = append(b, "No Boats")
+	fs, err := os.Stat(boatFile)
+	//We need to check if we have the boat file, load it for the first authorized
+	if errors.Is(err, os.ErrNotExist) || !fs.ModTime().After(time.Now().Add(24*time.Hour)) {
+		cookies, _, guiFleetId, err := guiSession()
+		if err != nil {
+			log.Error("GuiSession Failed", err)
+			return b
+		}
+		request, _ := http.NewRequest(http.MethodGet, guiUrl, nil)
+		values := request.URL.Query()
+		values.Set("a", "c")
+		values.Set("uniq", guiFleetId)
+		request.URL.RawQuery = values.Encode()
+		for _, o := range cookies {
+			request.AddCookie(o)
+		}
+		client := &http.Client{}
+		response, err := client.Do(request)
+		if err != nil {
+			log.Error("Client session fleet script", err)
+			return b
+		}
+		defer response.Body.Close()
+		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+			log.Error("Retrieve fleet script", err)
+			return b
+		}
+		bd, _ := io.ReadAll(response.Body)
+		str := string(bd)
+		re := regexp.MustCompile(`var info=(.*);`)
+		rem := re.FindStringSubmatch(str)
+		if len(rem) > 0 {
+			b = []string{}
+			btl := strings.Split(rem[1], "<b>Bootnaam<\\/b>: ")
+			for _, bt := range btl {
+				bs := strings.Split(bt, "<br")
+				if len(bs) > 1 {
+					if !slices.Contains(b, strings.TrimSpace(bs[0])) {
+						b = append(b, strings.TrimSpace(bs[0]))
+					}
+				}
+			}
+			if _, err := os.Stat(boatFile); os.IsNotExist(err) {
+				err := os.MkdirAll(filepath.Dir(boatFile), 0644) // Create your file
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+			json_to_file, _ := json.Marshal(b)
+			mutex.Lock()
+			err := ioutil.WriteFile(boatFile, json_to_file, 0644)
+			mutex.Unlock()
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Info("Boat list created")
+		}
+		return b
+	}
+
+	file, err := ioutil.ReadFile(boatFile)
+	if err != nil {
+		log.Error(err)
+	} else {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return b
+}
+
+//Read the  user info
+func readUsersJson() []UserInterface {
+	var b []UserInterface
+	var u UserInterface = UserInterface{Username: "?", Password: "?"}
+	b = append(b, u)
+	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
+	file, err := ioutil.ReadFile(userFile)
+	if err == nil {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return b
+}
+
+//Write the user info to file
+func writeUsersJson(data []UserInterface) {
+	if _, err := os.Stat(userFile); os.IsNotExist(err) {
+		err := os.MkdirAll(filepath.Dir(userFile), 0644) // Create your file
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	for i := len(data) - 1; i >= 0; i-- {
+		if data[i].Username == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
+			data = append(data[:i], data[i+1:]...)
+		}
+	}
+	json_to_file, _ := json.Marshal(data)
+	mutex.Lock()
+	err := ioutil.WriteFile(userFile, json_to_file, 0644)
+	mutex.Unlock()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+//Read the booking informatio
+func readJson() BookingSlice {
+	b := BookingSlice{}
+	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
+	mutex.Lock()
+	file, err := ioutil.ReadFile(bookingFile)
+	mutex.Unlock()
+	if err != nil {
+		log.Error(err)
+	} else {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			//We have a error try to recover the backup file
+			log.Error(err)
+			if _, err := os.Stat(bookingFile + ".bak"); errors.Is(err, os.ErrNotExist) {
+				writeJson(b)
+			} else {
+				mutex.Lock()
+				file, _ = ioutil.ReadFile(bookingFile + ".bak")
+				mutex.Unlock()
+				err = json.Unmarshal(file, &b)
+				if err != nil {
+					writeJson(b)
+				}
+			}
+		}
+	}
+	return b
+}
+
+//Write the data to the booking file, removing expired data
+func writeJson(data BookingSlice) {
+	if _, err := os.Stat(bookingFile); os.IsNotExist(err) {
+		err := os.MkdirAll(filepath.Dir(bookingFile), 0644) // Create your file
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	for i := len(data) - 1; i >= 0; i-- {
+		if data[i].State == "Delete" {
+			log.WithFields(log.Fields{
+				"state": data[i].State,
+				"boat":  data[i].Name,
+				"user":  data[i].Username,
+				"at":    shortDate(data[i].Date),
+				"from":  shortTime(data[i].Time),
+			}).Info("Deleting")
+			data = append(data[:i], data[i+1:]...)
+		}
+	}
+	json_to_file, _ := json.Marshal(data)
+	mutex.Lock()
+	os.Rename(bookingFile, bookingFile+".bak")
+	err := ioutil.WriteFile(bookingFile, json_to_file, 0644)
+	mutex.Unlock()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+//Function where al checks are done for a single booking and make the booking
 func doBooking(b *BookingInterface) (changed bool, err error) {
 	loc, _ := time.LoadLocation(timeZoneLoc)
 	//Step 2a: Check if we have a booking for the requested boat date and time
@@ -891,453 +1164,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	return false, err
 }
 
-//Logout for the specified booking
-func logout(booking *BookingInterface) error {
-	var err error
-	if len(booking.Cookies) != 0 {
-		var request *http.Request
-		data := url.Values{}
-		data.Set("action", "logout")
-		data.Set("exec", "")
-		data.Set("id", "")
-		request, err = http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-		for _, o := range booking.Cookies {
-			request.AddCookie(o)
-		}
-		if err != nil {
-			return err
-		}
-		client := &http.Client{}
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-			return errors.New("HTTP Status is out of the 2xx range")
-		}
-		booking.Cookies = response.Cookies()
-	}
-	return err
-}
-
-//Login for the specified booking and save the required cookie
-func login(booking *BookingInterface) error {
-	var err error
-	var request *http.Request
-	booking.Authorized = false
-	//Step 1: Get Cookie
-	var webUrl string = "https://my-fleet.eu/" + clubId + "/text/index.php?clubname=rvs&variant="
-	request, err = http.NewRequest(http.MethodGet, webUrl, nil)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-	booking.Cookies = response.Cookies()
-	if len(booking.Cookies) == 0 {
-		return errors.New("no session cookie")
-	}
-
-	//Step 2: It we will get the main pages including the bookinglist
-	data := url.Values{}
-	data.Set("action", "new")
-	data.Set("exec", "")
-	data.Set("id", "")
-	data.Set("username", booking.Username)
-	data.Set("password", booking.Password)
-	request, err = http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-	if err != nil {
-		return err
-	}
-	for _, o := range booking.Cookies {
-		request.AddCookie(o)
-	}
-	response, err = client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-	b, _ := io.ReadAll(response.Body)
-	str := string(b)
-	booking.Bookings = readbookingList(&str)
-	booking.Authorized = true
-	return nil
-}
-
-func readBoatJson() []string {
-	var b []string
-	b = append(b, "No Boats")
-	fs, err := os.Stat(boatFile)
-	//We need to check if we have the boat file, load it for the first authorized
-	if errors.Is(err, os.ErrNotExist) || !fs.ModTime().After(time.Now().Add(24*time.Hour)) {
-		cookies, _, guiFleetId, err := guiSession()
-		if err != nil {
-			log.Error("GuiSession Failed", err)
-			return b
-		}
-		request, _ := http.NewRequest(http.MethodGet, guiUrl, nil)
-		values := request.URL.Query()
-		values.Set("a", "c")
-		values.Set("uniq", guiFleetId)
-		request.URL.RawQuery = values.Encode()
-		for _, o := range cookies {
-			request.AddCookie(o)
-		}
-		client := &http.Client{}
-		response, err := client.Do(request)
-		if err != nil {
-			log.Error("Client session fleet script", err)
-			return b
-		}
-		defer response.Body.Close()
-		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-			log.Error("Retrieve fleet script", err)
-			return b
-		}
-		bd, _ := io.ReadAll(response.Body)
-		str := string(bd)
-		re := regexp.MustCompile(`var info=(.*);`)
-		rem := re.FindStringSubmatch(str)
-		if len(rem) > 0 {
-			b = []string{}
-			btl := strings.Split(rem[1], "<b>Bootnaam<\\/b>: ")
-			for _, bt := range btl {
-				bs := strings.Split(bt, "<br")
-				if len(bs) > 1 {
-					if !slices.Contains(b, strings.TrimSpace(bs[0])) {
-						b = append(b, strings.TrimSpace(bs[0]))
-					}
-				}
-			}
-			if _, err := os.Stat(boatFile); os.IsNotExist(err) {
-				err := os.MkdirAll(filepath.Dir(boatFile), 0644) // Create your file
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
-			json_to_file, _ := json.Marshal(b)
-			mutex.Lock()
-			err := ioutil.WriteFile(boatFile, json_to_file, 0644)
-			mutex.Unlock()
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Info("Boat list created")
-		}
-		return b
-	}
-
-	file, err := ioutil.ReadFile(boatFile)
-	if err != nil {
-		log.Error(err)
-	} else {
-		err = json.Unmarshal(file, &b)
-		if err != nil {
-			log.Error(err)
-		}
-	}
-	return b
-}
-
-func readUsersJson() []UserInterface {
-	var b []UserInterface
-	var u UserInterface = UserInterface{Username: "?", Password: "?"}
-	b = append(b, u)
-	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
-		return b
-	}
-	file, err := ioutil.ReadFile(userFile)
-	if err == nil {
-		err = json.Unmarshal(file, &b)
-		if err != nil {
-			log.Error(err)
-		}
-	}
-	return b
-}
-
-func readJson() BookingSlice {
-	b := BookingSlice{}
-	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
-		return b
-	}
-	mutex.Lock()
-	file, err := ioutil.ReadFile(bookingFile)
-	mutex.Unlock()
-	if err != nil {
-		log.Error(err)
-	} else {
-		err = json.Unmarshal(file, &b)
-		if err != nil {
-			//We have a error try to recover the backup file
-			log.Error(err)
-			if _, err := os.Stat(bookingFile + ".bak"); errors.Is(err, os.ErrNotExist) {
-				writeJson(b)
-			} else {
-				mutex.Lock()
-				file, _ = ioutil.ReadFile(bookingFile + ".bak")
-				mutex.Unlock()
-				err = json.Unmarshal(file, &b)
-				if err != nil {
-					writeJson(b)
-				}
-			}
-		}
-	}
-	return b
-}
-
-func writeUsersJson(data []UserInterface) {
-	if _, err := os.Stat(userFile); os.IsNotExist(err) {
-		err := os.MkdirAll(filepath.Dir(userFile), 0644) // Create your file
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	for i := len(data) - 1; i >= 0; i-- {
-		if data[i].Username == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
-			data = append(data[:i], data[i+1:]...)
-		}
-	}
-	json_to_file, _ := json.Marshal(data)
-	mutex.Lock()
-	err := ioutil.WriteFile(userFile, json_to_file, 0644)
-	mutex.Unlock()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-func writeJson(data BookingSlice) {
-	if _, err := os.Stat(bookingFile); os.IsNotExist(err) {
-		err := os.MkdirAll(filepath.Dir(bookingFile), 0644) // Create your file
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	for i := len(data) - 1; i >= 0; i-- {
-		if data[i].State == "Delete" {
-			log.WithFields(log.Fields{
-				"state": data[i].State,
-				"boat":  data[i].Name,
-				"user":  data[i].Username,
-				"at":    shortDate(data[i].Date),
-				"from":  shortTime(data[i].Time),
-			}).Info("Deleting")
-			data = append(data[:i], data[i+1:]...)
-		}
-	}
-	json_to_file, _ := json.Marshal(data)
-	mutex.Lock()
-	os.Rename(bookingFile, bookingFile+".bak")
-	err := ioutil.WriteFile(bookingFile, json_to_file, 0644)
-	mutex.Unlock()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func allowOrigin(origin string) (bool, error) {
-	// In this example we use a regular expression but we can imagine various
-	// kind of custom logic. For example, an external datasource could be used
-	// to maintain the list of allowed origins.
-	return true, nil //regexp.MatchString(`^https:\/\/spaarne\.(\w).(\w)$`, origin)
-}
-
-func jsonServer() error {
-	e := echo.New()
-	if jsonProtect {
-		e.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
-			if username == jsonUser && password == jsonPwd {
-				return true, nil
-			}
-			return false, nil
-		}))
-	}
-
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOriginFunc: allowOrigin,
-		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
-	}))
-
-	e.GET("/booking", func(c echo.Context) error {
-		bookings := readJson()
-		return c.JSON(http.StatusOK, bookings)
-	})
-	e.GET("/boat", func(c echo.Context) error {
-		boats := readBoatJson()
-		return c.JSON(http.StatusOK, boats)
-	})
-	e.GET("/users", func(c echo.Context) error {
-		users := readUsersJson()
-		return c.JSON(http.StatusOK, users)
-	})
-
-	e.GET("/version", func(c echo.Context) error {
-		var versionData = map[string]string{"version": Version}
-		return c.JSON(http.StatusOK, versionData)
-	})
-
-	e.GET("/booking/:id", func(c echo.Context) error {
-		bookings := readJson()
-
-		for _, booking := range bookings {
-			if c.Param("id") == strconv.FormatInt(booking.Id, 10) {
-				return c.JSON(http.StatusOK, booking)
-			}
-		}
-		return c.String(http.StatusNotFound, "Not found.")
-	})
-
-	e.POST("/booking", func(c echo.Context) error {
-		bookings := readJson()
-		//Autoincrement booking id
-		var id int64 = 0
-		for _, booking := range bookings {
-			id = MaxInt64(id, booking.Id+1)
-		}
-		new_booking := new(BookingInterface)
-		new_booking.Id = id
-		new_booking.State = ""
-		new_booking.Message = ""
-		new_booking.EpochNext = 0
-		new_booking.UserComment = new_booking.Comment != ""
-		err := c.Bind(new_booking)
-		if err != nil {
-			return c.String(http.StatusBadRequest, "Bad request.")
-		}
-
-		//Round the time to the closed one
-		if strings.Contains(new_booking.Time, "T") {
-			thetime, _ := time.Parse(time.RFC3339, new_booking.Time)
-			new_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
-		}
-
-		bookings = append(bookings, *new_booking)
-		writeJson(bookings)
-		log.WithFields(log.Fields{
-			"boat": new_booking.Name,
-			"user": new_booking.Username,
-			"at":   shortDate(new_booking.Date),
-			"from": shortTime(new_booking.Time),
-		}).Info("Added boat")
-
-		//Add password to user file
-		users := readUsersJson()
-		var found bool = false
-		for i, usr := range users {
-			if strings.EqualFold(usr.Username, new_booking.Username) {
-				users[i].Password = new_booking.Password
-				users[i].LastUsed = time.Now().Unix()
-				found = true
-				break
-			}
-		}
-		if !found {
-			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password, LastUsed: time.Now().Unix()})
-		}
-		writeUsersJson(users)
-
-		return c.JSON(http.StatusOK, bookings)
-	})
-
-	e.PUT("/booking/:id", func(c echo.Context) error {
-		bookings := readJson()
-
-		updated_booking := new(BookingInterface)
-		err := c.Bind(updated_booking)
-		if err != nil {
-			log.Error(err, updated_booking)
-			return c.String(http.StatusBadRequest, "Bad request.")
-		}
-		updated_booking.EpochNext = 0
-		updated_booking.State = ""
-		updated_booking.Message = ""
-		//Round the time to the closed one
-		if strings.Contains(updated_booking.Time, "T") {
-			thetime, _ := time.Parse(time.RFC3339, updated_booking.Time)
-			updated_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
-		}
-		log.WithFields(log.Fields{
-			"boat": updated_booking.Name,
-			"user": updated_booking.Username,
-			"at":   shortDate(updated_booking.Date),
-			"from": shortTime(updated_booking.Time),
-		}).Info("Updated boat")
-
-		//Add password to user file
-		users := readUsersJson()
-		var found bool = false
-		for i, usr := range users {
-			if strings.EqualFold(usr.Username, updated_booking.Username) {
-				users[i].Password = updated_booking.Password
-				users[i].LastUsed = time.Now().Unix()
-				found = true
-				break
-			}
-		}
-		if !found {
-			users = append(users, UserInterface{Username: updated_booking.Username, Password: updated_booking.Password, LastUsed: time.Now().Unix()})
-		}
-		writeUsersJson(users)
-
-		for i, booking := range bookings {
-			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
-				bookings = append(bookings[:i], bookings[i+1:]...)
-				bookings = append(bookings, *updated_booking)
-				writeJson(bookings)
-				return c.JSON(http.StatusOK, bookings)
-			}
-		}
-
-		return c.String(http.StatusNotFound, "Not found.")
-	})
-
-	e.DELETE("/booking/:id", func(c echo.Context) error {
-		bookings := readJson()
-
-		for i, booking := range bookings {
-			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
-				if booking.State == "Failed" || booking.State == "Waiting" ||
-					booking.State == "" || booking.State == "Canceled" ||
-					booking.State == "Blocked" || booking.State == "Error" {
-					log.WithFields(log.Fields{
-						"state": booking.State,
-						"boat":  booking.Name,
-						"user":  booking.Username,
-						"at":    shortDate(booking.Date),
-						"from":  shortTime(booking.Time),
-					}).Info("Deleting")
-					bookings = append(bookings[:i], bookings[i+1:]...)
-					writeJson(bookings)
-				} else if booking.State != "Cancel" {
-					booking.State = "Cancel"
-					booking.EpochNext = 0
-					bookings[i] = booking
-					writeJson(bookings)
-				}
-				return c.JSON(http.StatusOK, bookings)
-			}
-		}
-		return c.String(http.StatusNotFound, "Not found.")
-	})
-
-	//Serve the app
-	e.Static("/", "public")
-
-	return e.Start(bindAddress)
-}
-
+//The main loop in which we do all the booking processing
 func bookLoop() {
 	log.Println("Start processing")
 	var changed bool = false
@@ -1485,6 +1312,204 @@ func bookLoop() {
 		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(5*time.Second).Unix()-time.Now().Unix()) * time.Second)
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
+}
+
+//Indicate which CORS sites are allowed
+func allowOrigin(origin string) (bool, error) {
+	// In this example we use a regular expression but we can imagine various
+	// kind of custom logic. For example, an external datasource could be used
+	// to maintain the list of allowed origins.
+	return true, nil //regexp.MatchString(`^https:\/\/spaarne\.(\w).(\w)$`, origin)
+}
+
+//The basic web server
+func jsonServer() error {
+	e := echo.New()
+	g := e.Group("/data")
+	if jsonProtect {
+		g.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+			if username == jsonUser && password == jsonPwd {
+				return true, nil
+			}
+			return false, nil
+		}))
+	}
+
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOriginFunc: allowOrigin,
+		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
+	}))
+
+	g.GET("/booking", func(c echo.Context) error {
+		bookings := readJson()
+		return c.JSON(http.StatusOK, bookings)
+	})
+	g.GET("/boat", func(c echo.Context) error {
+		boats := readBoatJson()
+		return c.JSON(http.StatusOK, boats)
+	})
+	g.GET("/users", func(c echo.Context) error {
+		users := readUsersJson()
+		return c.JSON(http.StatusOK, users)
+	})
+
+	g.GET("/config", func(c echo.Context) error {
+		var versionData = map[string]string{"version": Version,
+			"interval": strconv.FormatInt(int64(refreshInterval), 10),
+			"prefix":   commentPrefix,
+			"clubid":   clubId,
+			"timezone": timeZone,
+		}
+		return c.JSON(http.StatusOK, versionData)
+	})
+
+	g.GET("/booking/:id", func(c echo.Context) error {
+		bookings := readJson()
+
+		for _, booking := range bookings {
+			if c.Param("id") == strconv.FormatInt(booking.Id, 10) {
+				return c.JSON(http.StatusOK, booking)
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.POST("/booking", func(c echo.Context) error {
+		bookings := readJson()
+		//Autoincrement booking id
+		var id int64 = 0
+		for _, booking := range bookings {
+			id = MaxInt64(id, booking.Id+1)
+		}
+		new_booking := new(BookingInterface)
+		new_booking.Id = id
+		new_booking.State = ""
+		new_booking.Message = ""
+		new_booking.EpochNext = 0
+		new_booking.UserComment = new_booking.Comment != ""
+		err := c.Bind(new_booking)
+		if err != nil {
+			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+
+		//Round the time to the closed one
+		if strings.Contains(new_booking.Time, "T") {
+			thetime, _ := time.Parse(time.RFC3339, new_booking.Time)
+			new_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
+		}
+
+		bookings = append(bookings, *new_booking)
+		writeJson(bookings)
+		log.WithFields(log.Fields{
+			"boat": new_booking.Name,
+			"user": new_booking.Username,
+			"at":   shortDate(new_booking.Date),
+			"from": shortTime(new_booking.Time),
+		}).Info("Added boat")
+
+		//Add password to user file
+		users := readUsersJson()
+		var found bool = false
+		for i, usr := range users {
+			if strings.EqualFold(usr.Username, new_booking.Username) {
+				users[i].Password = new_booking.Password
+				users[i].LastUsed = time.Now().Unix()
+				found = true
+				break
+			}
+		}
+		if !found {
+			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password, LastUsed: time.Now().Unix()})
+		}
+		writeUsersJson(users)
+
+		return c.JSON(http.StatusOK, bookings)
+	})
+
+	g.PUT("/booking/:id", func(c echo.Context) error {
+		bookings := readJson()
+
+		updated_booking := new(BookingInterface)
+		err := c.Bind(updated_booking)
+		if err != nil {
+			log.Error(err, updated_booking)
+			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+		updated_booking.EpochNext = 0
+		updated_booking.State = ""
+		updated_booking.Message = ""
+		//Round the time to the closed one
+		if strings.Contains(updated_booking.Time, "T") {
+			thetime, _ := time.Parse(time.RFC3339, updated_booking.Time)
+			updated_booking.Time = thetime.Round(15 * time.Minute).Format(time.RFC3339)
+		}
+		log.WithFields(log.Fields{
+			"boat": updated_booking.Name,
+			"user": updated_booking.Username,
+			"at":   shortDate(updated_booking.Date),
+			"from": shortTime(updated_booking.Time),
+		}).Info("Updated boat")
+
+		//Add password to user file
+		users := readUsersJson()
+		var found bool = false
+		for i, usr := range users {
+			if strings.EqualFold(usr.Username, updated_booking.Username) {
+				users[i].Password = updated_booking.Password
+				users[i].LastUsed = time.Now().Unix()
+				found = true
+				break
+			}
+		}
+		if !found {
+			users = append(users, UserInterface{Username: updated_booking.Username, Password: updated_booking.Password, LastUsed: time.Now().Unix()})
+		}
+		writeUsersJson(users)
+
+		for i, booking := range bookings {
+			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
+				bookings = append(bookings[:i], bookings[i+1:]...)
+				bookings = append(bookings, *updated_booking)
+				writeJson(bookings)
+				return c.JSON(http.StatusOK, bookings)
+			}
+		}
+
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.DELETE("/booking/:id", func(c echo.Context) error {
+		bookings := readJson()
+
+		for i, booking := range bookings {
+			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
+				if booking.State == "Failed" || booking.State == "Waiting" ||
+					booking.State == "" || booking.State == "Canceled" ||
+					booking.State == "Blocked" || booking.State == "Error" {
+					log.WithFields(log.Fields{
+						"state": booking.State,
+						"boat":  booking.Name,
+						"user":  booking.Username,
+						"at":    shortDate(booking.Date),
+						"from":  shortTime(booking.Time),
+					}).Info("Deleting")
+					bookings = append(bookings[:i], bookings[i+1:]...)
+					writeJson(bookings)
+				} else if booking.State != "Cancel" {
+					booking.State = "Cancel"
+					booking.EpochNext = 0
+					bookings[i] = booking
+					writeJson(bookings)
+				}
+				return c.JSON(http.StatusOK, bookings)
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	//Serve the app
+	e.Static("/", "public")
+	return e.Start(bindAddress)
 }
 
 func main() {

@@ -6,9 +6,9 @@ import { Alert, AlertTitle,Autocomplete} from '@material-ui/lab'
 import { TextField} from '@material-ui/core'
 import ActivityDetector from 'react-activity-detector';
 
-var url = "http://localhost:1323/"
+var url = "http://localhost:1323/data/"
 if (process.env.NODE_ENV === 'production') {
-  url = "/"
+  url = "/data/"
 }
 
 var idleTimer = 0
@@ -18,7 +18,7 @@ const App = () => {
   const [booking, setBooking] = useState([]);
   const [boat, setBoat] = useState([]);
   const [users, setUsers] = useState([]);
-  const [version, setVersion] = useState([]);
+  const [config, setConfig] = useState([]);
   const [iserror, setIserror] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
@@ -146,12 +146,12 @@ const App = () => {
     })
   }
 
-  const refreshVersion = () =>{
-    axios.get(`${url}version`)
+  const refreshConfig = () =>{
+    axios.get(`${url}config`)
     .then(res => {
-      const version = res.data;
-      setVersion(version.version);
-      //console.log(boat);
+      const config = res.data;
+      setConfig(config);
+      //console.log(config);
     })
   }
 
@@ -165,7 +165,7 @@ const App = () => {
   useEffect(() => {
     refreshData()
     refreshBoat()
-    refreshVersion()
+    refreshConfig()
     refreshUsers()
    }, [])
  
@@ -317,7 +317,7 @@ const App = () => {
           headerStyle: { borderBottomColor: 'red', borderBottomWidth: '3px', fontFamily: 'verdana' },
           actionsColumnIndex: -1,
           paging: false,
-          showTitle:false,
+          showTitle:true,
           draggable:false,
           addRowPosition : "first",
           rowStyle: rowData => ({
@@ -363,7 +363,7 @@ const App = () => {
           </Alert>
         }
       </div>
-      <small class="version">v {version}</small>
+      <small class="version">v {config && config.version ? config.version : "?.?.?"}</small>
     </div>
   );
 }
