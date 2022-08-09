@@ -25,7 +25,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.2.8"
+var Version = "0.2.9"
 var clubId = "R1B34"
 var bookingFile = "json/booking.json"
 var boatFile = "json/boats.json"
@@ -814,7 +814,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
 		b.Message = "Starttime before Sunrise"
 		b.State = "Waiting"
-		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(time.Duration(minDuration) * time.Hour).Truncate(15 * time.Minute).Unix()
+		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
 		return true, nil
 	}
 
@@ -1033,6 +1033,7 @@ func readBoatJson() []string {
 			if err != nil {
 				log.Fatal(err)
 			}
+			log.Info("Boat list created")
 		}
 		return b
 	}
@@ -1150,7 +1151,7 @@ func allowOrigin(origin string) (bool, error) {
 	// In this example we use a regular expression but we can imagine various
 	// kind of custom logic. For example, an external datasource could be used
 	// to maintain the list of allowed origins.
-	return true, nil //regexp.MatchString(`^https:\/\/labstack\.(net|com)$`, origin)
+	return true, nil //regexp.MatchString(`^https:\/\/spaarne\.(\w).(\w)$`, origin)
 }
 
 func jsonServer() error {

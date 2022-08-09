@@ -35,6 +35,7 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --re
 
 # ToDo
 * Update GUI updater
+* change version to config, response so main can set app values
 
 mid=bootid
 rid=bookingid

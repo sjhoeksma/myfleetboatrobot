@@ -21,12 +21,11 @@ const App = () => {
   const [version, setVersion] = useState([]);
   const [iserror, setIserror] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
+  const [selectedRow, setSelectedRow] = useState(null);
 
-  //let users = [{user : "SP3436", password: "SP3436"},{user : "SP3435", password: "SP3435"}]
   let columns = [
-    { title: 'Id', field: 'id', hidden: true },
+    { title: 'Status', field: 'state' , editable : 'never' },
     { title: 'Boot', field: 'boat', editable : 'onAdd',
-     //render: rowData => <p>{rowData.boat}</p>,
      editComponent: props => (
      <Autocomplete
           freeSolo
@@ -45,8 +44,8 @@ const App = () => {
           onInputChange={e =>{if (e) props.onChange(e.target.value)}}
         />)
     },
-    { title: 'Datum', field: 'date' ,  type : 'date'},
-    { title: 'Tijd', field: 'time', sorting :false,
+    { title: 'Datum', field: 'date' ,  type : 'date', defaultSort : 'desc'},
+    { title: 'Tijd', field: 'time', sorting :false, 
       // type : 'time',
       initialEditValue : "09:30",
       lookup: {
@@ -70,14 +69,13 @@ const App = () => {
         "05:00" : "05:00",  "05:15" : "05:15", "05:30" : "05:30", "05:45" : "05:45"
        }
      },
-    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90,
+    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90, 
       lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
     { title: 'Gebruiker', field: 'user',  
-     //render: rowData => <p>{usr}</p>,
      editComponent: props => (
       <Autocomplete
            freeSolo
-           id="userid"
+           id="username"
            options={users}
            getOptionLabel={(option) => { 
             return (!option || typeof option === "string" || option instanceof String) ? option: option.user
@@ -109,35 +107,9 @@ const App = () => {
               props.onChange(v)
             }
           }}
-           /*
-           onChange={(e,v) =>{
-            if (e && v) {
-              var u = (typeof v === "string" || v instanceof String) ? v : v.user
-              for(var i=0; i<users.length; i++) {
-                console.log(v)
-                if (users[i]["user"] === u.toUpperCase() && 
-                  props.rowData["password"] !== users[i]["password"]) {
-                  setPwd(users[i].password)
-                  setUsr(users[i].user)
-                }
-              }
-            }
-          }}
-           onInputChange={(e,v) =>{
-            if (e && v) {
-              for(var i=0; i<users.length; i++) {
-                if (users[i]["user"] === v.toUpperCase() && 
-                  props.rowData["password"] !== users[i]["password"]) {
-                  setPwd(users[i]["password"])
-                }
-              }
-            }
-          }}
-          */
           renderInput={(params) => (
-            <TextField {...params}   
+            <TextField {...params}  
             fullWidth
-             
             />
            )}
          />)
@@ -150,10 +122,10 @@ const App = () => {
             value={props.value}
             onChange={e => props.onChange(e.target.value)} 
         />) },
-    { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false  },
-    { title: 'UserCommentaar', field: 'usercomment', hidden: true ,type : 'boolean' },
-    { title: 'Status', field: 'state' , editable : 'never'},
-    { title: 'Melding', field: 'message', editable : 'never', sorting :false },
+    { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false },
+    { title: 'Melding', field: 'message', editable : 'never', sorting :false  },
+    { title: 'UserCommentaar', field: 'usercomment', type : 'boolean', hidden: true  },
+    { title: 'Id', field: 'id', hidden: true },
   ]
 
   const refreshData = () =>{
@@ -337,17 +309,22 @@ const App = () => {
   return (
     <div className="app">
       <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30*1000} onIdle={onIdle} onActive={onActive}/>
-      <h1>Boot Robot</h1> <br /><br />
-
       <MaterialTable
-        title="Booking"
+        title="Boot Robot"
         columns={columns}
         data={booking}
         options={{
           headerStyle: { borderBottomColor: 'red', borderBottomWidth: '3px', fontFamily: 'verdana' },
           actionsColumnIndex: -1,
-          pageSize: 10
+          paging: false,
+          showTitle:false,
+          draggable:false,
+          addRowPosition : "first",
+          rowStyle: rowData => ({
+            backgroundColor: (selectedRow === rowData.tableData.id) ? '#EEE' : '#FFF'
+          }), 
         }}
+        onRowClick={((evt, selectedRow) => setSelectedRow(selectedRow.tableData.id))}
         editable={{
           onRowUpdate: (newData, oldData) =>
             new Promise((resolve,reject) => {
