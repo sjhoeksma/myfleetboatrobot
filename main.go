@@ -137,7 +137,7 @@ type BoatListInterface struct {
 }
 
 var singleRun bool = true             //Should we do a single runonly = nowebserver
-var commentPrefix string = "#:"       //The prefix we use as a comment indicator the booking is ours
+var commentPrefix string = "BR:"      //The prefix we use as a comment indicator the booking is ours
 var bindAddress string = ":1323"      //The default bind port of web server
 var jsonUser string                   //The Basic Auth user of webserer
 var jsonPwd string                    //The Basic Auth password of webserver
@@ -225,7 +225,7 @@ func Init() {
 		log.Fatal(err)
 	}
 	timeZone = time.Now().In(loc).Format("-07:00")
-	log.Info("Spaarne v" + Version)
+	log.Info("MyFleet Boat Robot v" + Version)
 }
 
 //Create from the html response a booking array
@@ -1069,14 +1069,10 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
 	//Check if we have a boatList for the correct day, if not exit it
 	if boatList.EpochDate < b.EpochDate {
-		//log.Println("Date not valid yet", boatList.EpochDate, b.EpochDate)
-		if b.State != "Waiting" && b.Message != "Date not valid yet" {
-			b.Message = "Date not valid yet"
-			b.State = "Waiting"
-			b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
-			return true, nil
-		}
-		return false, nil
+		b.Message = "Date not valid yet"
+		b.State = "Waiting"
+		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
+		return true, nil
 	}
 
 	//Check if we would be allowed booking, we need to be after Sunrise
@@ -1084,7 +1080,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		b.Message = "Starttime before Sunrise"
 		b.State = "Waiting"
 		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Unix()
-		//b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow) * time.Hour)).Truncate(15 * time.Minute).Unix()
 		return true, nil
 	}
 
@@ -1095,13 +1090,10 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Check if we are allowed to book this
 	if endtime-starttime < int64(minDuration*60) {
-		if b.State != "Waiting" && !strings.Contains(b.Message, "Time between start and end") {
-			b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
-			b.State = "Waiting"
-			b.EpochNext = time.Now().Unix() - (endtime - starttime)
-			return true, nil
-		}
-		return false, nil
+		b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
+		b.State = "Waiting"
+		b.EpochNext = time.Now().Unix() - (endtime - starttime)
+		return true, nil
 	}
 
 	//Load the boatList for the need time

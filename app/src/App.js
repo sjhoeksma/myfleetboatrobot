@@ -24,8 +24,8 @@ const App = () => {
   const [selectedRow, setSelectedRow] = useState(null);
 
   let columns = [
-    { title: 'Status', field: 'state' , editable : 'never' },
-    { title: 'Boot', field: 'boat', editable : 'onAdd',
+    { title: 'State', field: 'state' , editable : 'never' },
+    { title: 'Boat', field: 'boat', editable : 'onAdd',
      editComponent: props => (
      <Autocomplete
           freeSolo
@@ -44,8 +44,8 @@ const App = () => {
           onInputChange={e =>{if (e) props.onChange(e.target.value)}}
         />)
     },
-    { title: 'Datum', field: 'date' ,  type : 'date', defaultSort : 'desc'},
-    { title: 'Tijd', field: 'time', sorting :false, 
+    { title: 'Date', field: 'date' ,  type : 'date', defaultSort : 'desc'},
+    { title: 'Time', field: 'time', sorting :false, 
       // type : 'time',
       initialEditValue : "09:30",
       lookup: {
@@ -69,9 +69,9 @@ const App = () => {
         "05:00" : "05:00",  "05:15" : "05:15", "05:30" : "05:30", "05:45" : "05:45"
        }
      },
-    { title: 'Duur', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90, 
-      lookup: {60: 60, 75: 75, 90: 90,105:105,120: 120}  },
-    { title: 'Gebruiker', field: 'user',  
+    { title: 'Duration', field: 'duration', type : 'numeric', sorting :false ,initialEditValue : 90, 
+      lookup: {60: 60, 75: 75, 90: 90, 105: 105, 120: 120}  },
+    { title: 'User', field: 'user',  
      editComponent: props => (
       <Autocomplete
            freeSolo
@@ -122,9 +122,9 @@ const App = () => {
             value={props.value}
             onChange={e => props.onChange(e.target.value)} 
         />) },
-    { title: 'Commentaar', field: 'comment', editable : 'onAdd', sorting :false },
-    { title: 'Melding', field: 'message', editable : 'never', sorting :false  },
-    { title: 'UserCommentaar', field: 'usercomment', type : 'boolean', hidden: true  },
+    { title: 'Comment', field: 'comment', editable : 'onAdd', sorting :false },
+    { title: 'Message', field: 'message', editable : 'never', sorting :false  },
+    { title: 'UserComment', field: 'usercomment', type : 'boolean', hidden: true  },
     { title: 'Id', field: 'id', hidden: true },
   ]
 
@@ -310,7 +310,7 @@ const App = () => {
     <div className="app">
       <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30*1000} onIdle={onIdle} onActive={onActive}/>
       <MaterialTable
-        title="Boot Robot"
+        title="MyFleet Boat Robot"
         columns={columns}
         data={booking}
         options={{

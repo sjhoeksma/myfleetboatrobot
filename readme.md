@@ -1,4 +1,4 @@
-# Boot Robot
+# MyFleet Boot Robot
 With is program you can automate booking a element of you club if the fleet is managed by: [my-feel.eu](https://my-fleet.eu/).
 
 The default values within the system are for the club **HetSpaarne** but you can change it by setting the clubId parameter.
@@ -23,15 +23,14 @@ npm run start
 The system has been setup that onchecking of the oce a new version is build and automaticly push to hub.docker.com. But for local build you can use
 
 ```
-docker build --tag 3pidev/spaarne .
-docker push 3pidev/spaarne
+docker build --tag 3pidev/boatrobot .
+docker push 3pidev/boatrobot
 ```
 
 Running and testing the build file can be done by
 ```
-docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name spaarne --restart unless-stopped 3pidev/spaarne:latest
+docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name boatrobot --restart unless-stopped 3pidev/boatrobot:latest
 ```
-
 
 # ToDo
 * Update GUI updater
