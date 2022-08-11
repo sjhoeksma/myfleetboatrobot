@@ -185,7 +185,7 @@ const App = () => {
     if (!('boat' in newData) || newData.boat === "" || newData.boat === null) {
       errorList.push("Try Again, You didn't enter the Boat field")
     }
-    if (!('date' in newData) || newData.date === "") {
+    if (!('date' in newData) || newData.date === ""  || newData.date === null) {
       errorList.push("Try Again, You didn't enter a valid Date field")
     }
 
@@ -254,7 +254,7 @@ const App = () => {
     if (!('boat' in newData) || newData.boat === "" || newData.boat === null) {
       errorList.push("Try Again, You didn't enter the Boat field")
     }
-    if (!('date' in newData) || newData.date === "") {
+    if (!('date' in newData) || newData.date === "" || newData.date === null) {
       errorList.push("Try Again, You didn't enter the Date field")
     }
     if (!('time' in newData) || newData.time === "") {
