@@ -137,7 +137,7 @@ type BoatListInterface struct {
 }
 
 var singleRun bool = true             //Should we do a single runonly = nowebserver
-var commentPrefix string = "BR:"      //The prefix we use as a comment indicator the booking is ours
+var commentPrefix string = "MYFR:"    //The prefix we use as a comment indicator the booking is ours
 var bindAddress string = ":1323"      //The default bind port of web server
 var jsonUser string                   //The Basic Auth user of webserer
 var jsonPwd string                    //The Basic Auth password of webserver
@@ -193,6 +193,7 @@ func Init() {
 	setEnvValue("JSONPWD", &jsonPwd)
 	setEnvValue("PREFIX", &commentPrefix)
 	setEnvValue("TIMEZONE", &timeZone)
+	setEnvValue("CLUBID", &clubId)
 
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
@@ -225,7 +226,7 @@ func Init() {
 		log.Fatal(err)
 	}
 	timeZone = time.Now().In(loc).Format("-07:00")
-	log.Info("MyFleet Boat Robot v" + Version)
+	log.Info("MyFleet Robot v" + Version)
 }
 
 //Create from the html response a booking array
@@ -535,6 +536,7 @@ func confirmBoat(booking *BookingInterface) error {
 	return nil
 }
 
+/*
 //Do a update of the boat by canceling it and booking it again
 func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error {
 	err := boatCancel(booking)
@@ -543,8 +545,8 @@ func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error
 	}
 	return err
 }
+*/
 
-/*
 func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
 	//STEP: Session
 	cookies, guiEpochStart, _, err := guiSession()
@@ -626,12 +628,8 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
 		return errors.New("HTTP Status is out of the 2xx range")
 	}
-
-	//booking.EpochStart = startTime
-	//booking.EpochEnd = endTime
 	return nil
 }
-*/
 
 //Create a gui session to work on
 func guiSession() ([]*http.Cookie, int64, string, error) {

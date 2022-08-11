@@ -310,7 +310,7 @@ const App = () => {
     <div className="app">
       <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30*1000} onIdle={onIdle} onActive={onActive}/>
       <MaterialTable
-        title="MyFleet Boat Robot"
+        title="MyFleet Robot"
         columns={columns}
         data={booking}
         options={{
