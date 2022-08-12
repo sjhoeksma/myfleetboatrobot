@@ -76,7 +76,7 @@ const App = () => {
       <Autocomplete
            freeSolo
            id="username"
-           options={users.length!==0 ? users : refreshUsers()}
+           options={users}
            getOptionLabel={(option) => { 
             return (!option || typeof option === "string" || option instanceof String) ? option: option.user
           }}
@@ -165,11 +165,12 @@ const App = () => {
       setUsers(users);
       //console.log(users);
     })
-    return users
+    ;;return users
   }
   useEffect(() => {
     refreshData()
     refreshBoat()
+    refreshUsers()
     refreshConfig()
    }, [])
  
@@ -211,6 +212,7 @@ const App = () => {
           setIserror(false)
           setErrorMessages([])
           resolve()
+          refreshUsers()
         })
         .catch(error => {
           setErrorMessages(["Update failed! Server error"])
@@ -278,6 +280,7 @@ const App = () => {
           setErrorMessages([])
           setIserror(false)
           resolve()
+          refreshUsers()
         })
         .catch(error => {
           setErrorMessages(["Cannot add data. Server error!"])
@@ -304,6 +307,7 @@ const App = () => {
     if (idleTimer !== 0) {
       clearInterval(idleTimer);
       refreshData()
+      refreshUsers()
       refreshBoat()
     }
     idleTimer=0

@@ -26,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.0"                 //The version of application
+var Version = "0.3.1"                 //The version of application
 var clubId = "R1B34"                  //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
@@ -1384,10 +1384,6 @@ func jsonServer() error {
 		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
 	}))
 
-	e.GET("/data/booking", func(c echo.Context) error {
-		bookings := readJson()
-		return c.JSON(http.StatusOK, bookings)
-	})
 	e.GET("/data/boat", func(c echo.Context) error {
 		boats := readBoatJson()
 		return c.JSON(http.StatusOK, boats)
@@ -1403,7 +1399,13 @@ func jsonServer() error {
 		return c.JSON(http.StatusOK, versionData)
 	})
 
-	e.GET("/data/booking/:id", func(c echo.Context) error {
+	//Protected requests
+	g.GET("/booking", func(c echo.Context) error {
+		bookings := readJson()
+		return c.JSON(http.StatusOK, bookings)
+	})
+
+	g.GET("/booking/:id", func(c echo.Context) error {
 		bookings := readJson()
 
 		for _, booking := range bookings {
@@ -1414,7 +1416,6 @@ func jsonServer() error {
 		return c.String(http.StatusNotFound, "Not found.")
 	})
 
-	//Protected requests
 	g.GET("/users", func(c echo.Context) error {
 		users := readUsersJson()
 		return c.JSON(http.StatusOK, users)
