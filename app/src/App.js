@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import MaterialTable from 'material-table';
+import MaterialTable, { MTableBodyRow }  from 'material-table';
 import './App.css';
 import axios from 'axios';
 import { Alert, AlertTitle,Autocomplete} from '@material-ui/lab'
@@ -76,7 +76,7 @@ const App = () => {
       <Autocomplete
            freeSolo
            id="username"
-           options={users}
+           options={users.length!==0 ? users : refreshUsers()}
            getOptionLabel={(option) => { 
             return (!option || typeof option === "string" || option instanceof String) ? option: option.user
           }}
@@ -135,6 +135,7 @@ const App = () => {
       setBooking(booking);
       //console.log(booking);
     })
+    //return booking
   }
 
   const refreshBoat = () =>{
@@ -144,6 +145,7 @@ const App = () => {
       setBoat(boat);
       //console.log(boat);
     })
+    //return boat
   }
 
   const refreshConfig = () =>{
@@ -153,6 +155,7 @@ const App = () => {
       setConfig(config);
       //console.log(config);
     })
+    //return config
   }
 
   const refreshUsers = () =>{
@@ -160,13 +163,14 @@ const App = () => {
     .then(res => {
       const users = res.data;
       setUsers(users);
+      //console.log(users);
     })
+    return users
   }
   useEffect(() => {
     refreshData()
     refreshBoat()
     refreshConfig()
-    refreshUsers()
    }, [])
  
 
@@ -300,7 +304,6 @@ const App = () => {
     if (idleTimer !== 0) {
       clearInterval(idleTimer);
       refreshData()
-      refreshUsers()
       refreshBoat()
     }
     idleTimer=0
@@ -310,7 +313,7 @@ const App = () => {
     <div className="app">
       <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30*1000} onIdle={onIdle} onActive={onActive}/>
       <MaterialTable
-        title="MyFleet Robot"
+        title={<div className="MTableToolbar-title-9"><img src="favicon.ico" height="25" alt=""></img><h6 className="MuiTypography-root MuiTypography-h6" style={{"whiteSpace": "nowrap", "overflow": "hidden", "textOverflow": "ellipsis"}}>&nbsp;MyFleet Robot</h6></div>}
         columns={columns}
         data={booking}
         options={{
@@ -324,8 +327,19 @@ const App = () => {
             backgroundColor: (selectedRow === rowData.tableData.id) ? '#EEE' : '#FFF'
           }), 
         }}
+        components={{
+          Row: props => (
+            <MTableBodyRow
+              {...props}
+              onDoubleClick={(e) => {
+                props.actions[1]().onClick(e,props.data);
+              }}
+           />
+          )
+        }}
         onRowClick={((evt, selectedRow) => setSelectedRow(selectedRow.tableData.id))}
         editable={{
+          isEditable: rowData => (!rowData || !(rowData.state === 'Finished' || rowData.state === 'Cancel' || rowData.state === 'Confirmed')), // only editable if not finished
           onRowUpdate: (newData, oldData) =>
             new Promise((resolve,reject) => {
               handleRowUpdate(newData, oldData, resolve,reject);
@@ -363,7 +377,7 @@ const App = () => {
           </Alert>
         }
       </div>
-      <small class="version">v {config && config.version ? config.version : "?.?.?"}</small>
+      <small className="version">v {config && config.version ? config.version : "?.?.?"}</small>
     </div>
   );
 }

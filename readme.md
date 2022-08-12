@@ -20,7 +20,7 @@ npm run start
 
 ## Building production
 
-The system has been setup that onchecking of the oce a new version is build and automaticly push to hub.docker.com. But for local build you can use
+The system has been setup to build and automatically push to hub.docker.com. But for local build you can use
 
 ```
 docker build --tag 3pidev/myfleetrobot .
@@ -29,12 +29,11 @@ docker push 3pidev/myfleetrobot
 
 Running and testing the build file can be done by
 ```
-docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name boatrobot --restart unless-stopped 3pidev/myfleetrobot:latest
+docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name=fleetrobot --restart unless-stopped 3pidev/myfleetrobot:latest
 ```
 
 # ToDo
 * Update GUI updater
-
 
 ## Gui Info for booking
 mid=bootid

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -25,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.2.11"                //The version of application
+var Version = "0.3.0"                 //The version of application
 var clubId = "R1B34"                  //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
@@ -37,6 +38,7 @@ var maxDuration = 120                 //The maximal duration allowed to book
 var bookWindow = 48                   //The number of hours allowed to book
 var maxRetry int = 0                  //The maximum numbers of retry before we give up, 0=disabled
 var refreshInterval int = 1           //We do a check of the database every 1 minute
+var logLevel string = "Info"          //Default loglevel is info
 
 //Convert boat to code
 var boatFilter = map[string]string{
@@ -194,6 +196,7 @@ func Init() {
 	setEnvValue("PREFIX", &commentPrefix)
 	setEnvValue("TIMEZONE", &timeZone)
 	setEnvValue("CLUBID", &clubId)
+	setEnvValue("LOGLEVEL", &logLevel)
 
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
@@ -206,6 +209,7 @@ func Init() {
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.StringVar(&clubId, "clubId", clubId, "The clubId used")
+	flag.StringVar(&logLevel, "logLevel", logLevel, "The log level to use")
 	flag.StringVar(&test, "test", test, "The test action to perform")
 
 	flag.Parse() // after declaring flags we need to call it
@@ -217,6 +221,17 @@ func Init() {
 	if test != "" {
 		singleRun = true
 	}
+
+	//Setup the logging
+	level, err := log.ParseLevel(logLevel)
+	if err != nil {
+		log.SetLevel(log.InfoLevel)
+	} else {
+		log.SetLevel(level)
+	}
+	log.SetFormatter(&log.TextFormatter{DisableColors: false, FullTimestamp: true})
+	//log.SetFormatter(&log.JSONFormatter{DisableColors: false, FullTimestamp: true,})
+
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonUser != "" && jsonPwd != "")
 	baseUrl = "https://my-fleet.eu/" + clubId + "/mobile/index0.php?&system=mobile&language=NL"
@@ -226,6 +241,8 @@ func Init() {
 		log.Fatal(err)
 	}
 	timeZone = time.Now().In(loc).Format("-07:00")
+
+	//Log the version
 	log.Info("MyFleet Robot v" + Version)
 }
 
@@ -1309,9 +1326,49 @@ func allowOrigin(origin string) (bool, error) {
 	return true, nil //regexp.MatchString(`^https:\/\/spaarne\.(\w).(\w)$`, origin)
 }
 
+//Function to create log entry
+func makeLogEntry(c echo.Context) *log.Entry {
+	if c == nil {
+		return log.WithFields(log.Fields{
+			"at": time.Now().Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return log.WithFields(log.Fields{
+		"at":     time.Now().Format("2006-01-02 15:04:05"),
+		"method": c.Request().Method,
+		"uri":    c.Request().URL.String(),
+		"ip":     c.Request().RemoteAddr,
+	})
+}
+
+//Middleware logging services
+func middlewareLogging(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		makeLogEntry(c).Debug("incoming request")
+		return next(c)
+	}
+}
+
+//Error handler for JsonSer er
+func errorHandler(err error, c echo.Context) {
+	report, ok := err.(*echo.HTTPError)
+	if ok {
+		report.Message = fmt.Sprintf("http error %d - %v", report.Code, report.Message)
+	} else {
+		report = echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	makeLogEntry(c).Error(report.Message)
+	c.HTML(report.Code, report.Message.(string))
+}
+
 //The basic web server
 func jsonServer() error {
 	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+	e.Use(middlewareLogging)
+	e.HTTPErrorHandler = errorHandler
 	g := e.Group("/data")
 	if jsonProtect {
 		g.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
@@ -1327,20 +1384,16 @@ func jsonServer() error {
 		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
 	}))
 
-	g.GET("/booking", func(c echo.Context) error {
+	e.GET("/data/booking", func(c echo.Context) error {
 		bookings := readJson()
 		return c.JSON(http.StatusOK, bookings)
 	})
-	g.GET("/boat", func(c echo.Context) error {
+	e.GET("/data/boat", func(c echo.Context) error {
 		boats := readBoatJson()
 		return c.JSON(http.StatusOK, boats)
 	})
-	g.GET("/users", func(c echo.Context) error {
-		users := readUsersJson()
-		return c.JSON(http.StatusOK, users)
-	})
 
-	g.GET("/config", func(c echo.Context) error {
+	e.GET("/data/config", func(c echo.Context) error {
 		var versionData = map[string]string{"version": Version,
 			"interval": strconv.FormatInt(int64(refreshInterval), 10),
 			"prefix":   commentPrefix,
@@ -1350,7 +1403,7 @@ func jsonServer() error {
 		return c.JSON(http.StatusOK, versionData)
 	})
 
-	g.GET("/booking/:id", func(c echo.Context) error {
+	e.GET("/data/booking/:id", func(c echo.Context) error {
 		bookings := readJson()
 
 		for _, booking := range bookings {
@@ -1359,6 +1412,12 @@ func jsonServer() error {
 			}
 		}
 		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	//Protected requests
+	g.GET("/users", func(c echo.Context) error {
+		users := readUsersJson()
+		return c.JSON(http.StatusOK, users)
 	})
 
 	g.POST("/booking", func(c echo.Context) error {
@@ -1409,7 +1468,6 @@ func jsonServer() error {
 			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password, LastUsed: time.Now().Unix()})
 		}
 		writeUsersJson(users)
-
 		return c.JSON(http.StatusOK, bookings)
 	})
 
@@ -1456,6 +1514,10 @@ func jsonServer() error {
 		for i, booking := range bookings {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				bookings = append(bookings[:i], bookings[i+1:]...)
+				//Cancel a Boat when you update it, while it is finished
+				if booking.State == "Finished" || booking.State == "Confirmed" {
+					boatCancel(&booking)
+				}
 				bookings = append(bookings, *updated_booking)
 				writeJson(bookings)
 				return c.JSON(http.StatusOK, bookings)
@@ -1496,6 +1558,7 @@ func jsonServer() error {
 
 	//Serve the app
 	e.Static("/", "public")
+	log.Printf("Start jsonserver on %s", bindAddress)
 	return e.Start(bindAddress)
 }
 
@@ -1508,8 +1571,6 @@ func main() {
 		mutex.Lock()
 		os.Exit(1)
 	}()
-	log.SetFormatter(&log.TextFormatter{DisableColors: false, FullTimestamp: true})
-	//log.SetFormatter(&log.JSONFormatter{DisableColors: false, FullTimestamp: true,})
 	Init()
 	if !singleRun {
 		go bookLoop()
