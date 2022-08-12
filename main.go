@@ -26,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.1"                 //The version of application
+var Version = "0.3.2"                 //The version of application
 var clubId = "R1B34"                  //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
@@ -147,6 +147,7 @@ var jsonProtect bool                  //Should the web server use Basic Auth
 var baseUrl string                    //The base url towards the fleet.eu backend
 var guiUrl string                     //The gui url towards the fleet.eu backend
 var test string = ""                  //The test we should be running, means allways single ru
+var title string = ""                 //The title string
 var mutex *sync.Mutex = &sync.Mutex{} //The lock used where writing files
 
 //Find min of 2 int64 values
@@ -197,6 +198,7 @@ func Init() {
 	setEnvValue("TIMEZONE", &timeZone)
 	setEnvValue("CLUBID", &clubId)
 	setEnvValue("LOGLEVEL", &logLevel)
+	setEnvValue("TITLE", &title)
 
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
@@ -210,6 +212,7 @@ func Init() {
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.StringVar(&clubId, "clubId", clubId, "The clubId used")
 	flag.StringVar(&logLevel, "logLevel", logLevel, "The log level to use")
+	flag.StringVar(&title, "title", title, "The title to use in app")
 	flag.StringVar(&test, "test", test, "The test action to perform")
 
 	flag.Parse() // after declaring flags we need to call it
@@ -1384,22 +1387,22 @@ func jsonServer() error {
 		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
 	}))
 
-	e.GET("/data/boat", func(c echo.Context) error {
-		boats := readBoatJson()
-		return c.JSON(http.StatusOK, boats)
-	})
-
 	e.GET("/data/config", func(c echo.Context) error {
 		var versionData = map[string]string{"version": Version,
 			"interval": strconv.FormatInt(int64(refreshInterval), 10),
 			"prefix":   commentPrefix,
 			"clubid":   clubId,
 			"timezone": timeZone,
+			"title":    title,
 		}
 		return c.JSON(http.StatusOK, versionData)
 	})
 
 	//Protected requests
+	g.GET("/boat", func(c echo.Context) error {
+		boats := readBoatJson()
+		return c.JSON(http.StatusOK, boats)
+	})
 	g.GET("/booking", func(c echo.Context) error {
 		bookings := readJson()
 		return c.JSON(http.StatusOK, bookings)
