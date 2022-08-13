@@ -26,8 +26,9 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.3"                 //The version of application
-var clubId = "R1B34"                  //The club code
+var Version = "0.3.4"                 //The version of application
+var myFleetVersion = "R1B34"          //The software version of myFleet
+var clubId = "rvs"                    //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
 var userFile = "json/users.json"      //The json file to store users
@@ -197,6 +198,7 @@ func Init() {
 	setEnvValue("PREFIX", &commentPrefix)
 	setEnvValue("TIMEZONE", &timeZone)
 	setEnvValue("CLUBID", &clubId)
+	setEnvValue("FLEETVERSION", &myFleetVersion)
 	setEnvValue("LOGLEVEL", &logLevel)
 	setEnvValue("TITLE", &title)
 
@@ -211,6 +213,7 @@ func Init() {
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.StringVar(&clubId, "clubId", clubId, "The clubId used")
+	flag.StringVar(&myFleetVersion, "fleetVersion", myFleetVersion, "The version of the myFleet software to use")
 	flag.StringVar(&logLevel, "logLevel", logLevel, "The log level to use")
 	flag.StringVar(&title, "title", title, "The title to use in app")
 	flag.StringVar(&test, "test", test, "The test action to perform")
@@ -237,8 +240,8 @@ func Init() {
 
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonUser != "" && jsonPwd != "")
-	baseUrl = "https://my-fleet.eu/" + clubId + "/mobile/index0.php?&system=mobile&language=NL"
-	guiUrl = "https://my-fleet.eu/" + clubId + "/gui/index.php"
+	baseUrl = "https://my-fleet.eu/" + myFleetVersion + "/mobile/index0.php?&system=mobile&language=NL"
+	guiUrl = "https://my-fleet.eu/" + myFleetVersion + "/gui/index.php"
 	loc, err := time.LoadLocation(timeZoneLoc)
 	if err != nil {
 		log.Fatal(err)
@@ -657,7 +660,7 @@ func guiSession() ([]*http.Cookie, int64, string, error) {
 	var guiEpochStart int64
 	var guiFleetId string
 
-	request, _ := http.NewRequest(http.MethodGet, guiUrl+"?language=NL&brsuser=-1&clubname=rvs", nil)
+	request, _ := http.NewRequest(http.MethodGet, guiUrl+"?language=NL&brsuser=-1&clubname="+clubId, nil)
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
@@ -734,7 +737,7 @@ func login(booking *BookingInterface) error {
 	var request *http.Request
 	booking.Authorized = false
 	//Step 1: Get Cookie
-	var webUrl string = "https://my-fleet.eu/" + clubId + "/text/index.php?clubname=rvs&variant="
+	var webUrl string = "https://my-fleet.eu/" + myFleetVersion + "/text/index.php?clubname=" + clubId + "&variant="
 	request, err = http.NewRequest(http.MethodGet, webUrl, nil)
 	if err != nil {
 		return err
@@ -1389,11 +1392,12 @@ func jsonServer() error {
 
 	e.GET("/data/config", func(c echo.Context) error {
 		var versionData = map[string]string{"version": Version,
-			"interval": strconv.FormatInt(int64(refreshInterval), 10),
-			"prefix":   commentPrefix,
-			"clubid":   clubId,
-			"timezone": timeZone,
-			"title":    title,
+			"interval":       strconv.FormatInt(int64(refreshInterval), 10),
+			"prefix":         commentPrefix,
+			"clubid":         clubId,
+			"myfleetVersion": myFleetVersion,
+			"timezone":       timeZone,
+			"title":          title,
 		}
 		return c.JSON(http.StatusOK, versionData)
 	})
