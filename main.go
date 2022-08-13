@@ -37,6 +37,7 @@ var timeZone = "+02:00"               //The time zone in hour, is also calculate
 var minDuration = 60                  //The minimal duration required to book
 var maxDuration = 120                 //The maximal duration allowed to book
 var bookWindow = 48                   //The number of hours allowed to book
+var confirmTime = 10                  //Time in Min before before starting time to confirm booking, 0=Disabled
 var maxRetry int = 0                  //The maximum numbers of retry before we give up, 0=disabled
 var refreshInterval int = 1           //We do a check of the database every 1 minute
 var logLevel string = "Info"          //Default loglevel is info
@@ -209,6 +210,7 @@ func Init() {
 	flag.IntVar(&refreshInterval, "refresh", refreshInterval, "The iterval in minutes used for refeshing")
 	flag.IntVar(&bookWindow, "bookWindow", bookWindow, "The interval in hours for allowed bookings")
 	flag.IntVar(&maxRetry, "maxRetry", maxRetry, "The maximum retry's before failing, 0=disabled")
+	flag.IntVar(&confirmTime, "confirmTime", confirmTime, "The time before confirming, 0=disabled")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
 	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
@@ -1224,8 +1226,8 @@ func bookLoop() {
 			booking.EpochEnd = thetime.Unix()
 
 			//Check if we should confirm the booking
-			if booking.State == "Finished" &&
-				time.Unix(booking.EpochStart, 0).Add(-15*time.Minute).Unix() >= time.Now().Unix() &&
+			if booking.State == "Finished" && confirmTime != 0 &&
+				time.Unix(booking.EpochStart, 0).Add(-time.Duration(confirmTime)*time.Minute).Unix() >= time.Now().Unix() &&
 				time.Unix(booking.EpochStart, 0).Unix() <= time.Now().Unix() {
 				err = confirmBoat(&booking)
 				if err == nil {
