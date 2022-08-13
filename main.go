@@ -26,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.2"                 //The version of application
+var Version = "0.3.3"                 //The version of application
 var clubId = "R1B34"                  //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
 var boatFile = "json/boats.json"      //The json file to store boats
@@ -1315,8 +1315,8 @@ func bookLoop() {
 		if singleRun {
 			break
 		}
-		//We sleep before we restart, where we align as close as possible to interval, but always 5 sec for offset
-		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(5*time.Second).Unix()-time.Now().Unix()) * time.Second)
+		//We sleep before we restart, where we align as close as possible to interval, but always 3 sec for offset
+		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(3*time.Second).Unix()-time.Now().Unix()) * time.Second)
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }
@@ -1561,6 +1561,7 @@ func jsonServer() error {
 	})
 
 	//Serve the app
+	g.Static("/", "public")
 	e.Static("/", "public")
 	log.Printf("Start jsonserver on %s", bindAddress)
 	return e.Start(bindAddress)
