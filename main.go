@@ -26,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.4"                 //The version of application
+var Version = "0.3.5"                 //The version of application
 var myFleetVersion = "R1B34"          //The software version of myFleet
 var clubId = "rvs"                    //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
