@@ -318,7 +318,7 @@ const App = () => {
     <div className="app">
       <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30*1000} onIdle={onIdle} onActive={onActive}/>
       <MaterialTable
-        title={<div className="MTableToolbar-title-9"><img src="favicon.ico" height="25" alt=""></img><h6 className="MuiTypography-root MuiTypography-h6" style={{"whiteSpace": "nowrap", "overflow": "hidden", "textOverflow": "ellipsis"}}>&nbsp;{config && config.title ? config.title : "MyFleet Robot"}</h6></div>}
+        title={<div className="MTableToolbar-title-9"><img className="TableToolbar-icon" src="favicon.ico" alt=""></img><h6 className="MuiTypography-root MuiTypography-h6" style={{"whiteSpace": "nowrap", "overflow": "hidden", "textOverflow": "ellipsis"}}>&nbsp;{config && config.title ? config.title : "MyFleet Robot"}</h6></div>}
         columns={columns}
         data={booking}
         options={{

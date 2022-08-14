@@ -1575,12 +1575,12 @@ func jsonServer() error {
 
 func main() {
 	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-c
 		log.Println("Waiting for clean Exit")
 		mutex.Lock()
-		os.Exit(1)
+		os.Exit(0)
 	}()
 	Init()
 	if !singleRun {
