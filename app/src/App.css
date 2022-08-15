@@ -16,6 +16,17 @@
     width: 25px
 }
 
+.version {
+    float: right;
+    color: gray;
+}
+
+.myfleet {
+    float: left;
+    color: gray;
+}
+
+
 @media only screen and (max-width: 480px) {
     .MuiTypography-h6 {
         display: none;

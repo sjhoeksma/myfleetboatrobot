@@ -382,7 +382,8 @@ const App = () => {
           </Alert>
         }
       </div>
-      <small className="version">v {config && config.version ? config.version : "?.?.?"}</small>
+      <small className="myfleet">{config && config.myfleetVersion ? config.myfleetVersion + " - " + config.clubid : ""}</small>
+      <small className="version">v {config && config.version ? config.version : ""}</small>
     </div>
   );
 }
