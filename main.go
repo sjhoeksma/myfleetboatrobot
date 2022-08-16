@@ -26,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.3.6"                 //The version of application
+var Version = "0.4.0"                 //The version of application
 var myFleetVersion = "R1B34"          //The software version of myFleet
 var clubId = "rvs"                    //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
@@ -109,6 +109,7 @@ type BookingInterface struct {
 	Username    string         `json:"user"`
 	Password    string         `json:"password"`
 	Comment     string         `json:"comment"`
+	Repeat      bool           `json:"repeat,omitempty"`
 	State       string         `json:"state,omitempty"`
 	BookingId   string         `json:"bookingid,omitempty"`
 	BoatId      string         `json:"boatid,omitempty"`
@@ -1242,6 +1243,15 @@ func bookLoop() {
 			//Check if have allready processed the booking, if so skip it
 			if booking.State == "Finished" || booking.State == "Comfirmed" || booking.State == "Canceled" ||
 				booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
+				//Check if we should repeat this item
+				if booking.Repeat && booking.EpochEnd < time.Now().Unix() {
+					booking.State = "Repeat"
+					booking.Message = "Booking is repeating"
+					booking.BookingId = ""
+					booking.Date = time.Unix(booking.EpochStart, 0).Add(time.Duration(7*24) * time.Hour).Format("2006-01-02")
+					bookingSlice[i] = booking
+					changed = true
+				} else
 				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
 				//Check if we should mark record for removal, after 12 hours
 				if booking.EpochEnd < time.Now().Add(-time.Hour*12).Unix() {

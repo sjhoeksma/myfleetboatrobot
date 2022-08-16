@@ -123,6 +123,7 @@ const App = () => {
             onChange={e => props.onChange(e.target.value)} 
         />) },
     { title: 'Comment', field: 'comment', editable : 'onAdd', sorting :false },
+    { title: 'Repeat', field: 'repeat', sorting :false, type : 'boolean' },
     { title: 'Message', field: 'message', editable : 'never', sorting :false  },
     { title: 'UserComment', field: 'usercomment', type : 'boolean', hidden: true  },
     { title: 'Id', field: 'id', hidden: true },
