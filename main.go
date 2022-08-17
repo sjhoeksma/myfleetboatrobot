@@ -26,7 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var Version = "0.4.0"                 //The version of application
+var Version = "0.4.1"                 //The version of application
 var myFleetVersion = "R1B34"          //The software version of myFleet
 var clubId = "rvs"                    //The club code
 var bookingFile = "json/booking.json" //The json file to store bookings in
@@ -1069,7 +1069,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	}
 
 	//Check if we should mark record for removal, after 12 hours
-	if b.EpochEnd < time.Now().Add(-time.Hour*12).Unix() {
+	if b.EpochEnd < time.Now().Add(-time.Hour*24).Unix() {
 		//log.Println("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
 		b.State = "Delete"
 		b.Message = "Booking marked for Delete"
@@ -1253,8 +1253,8 @@ func bookLoop() {
 					changed = true
 				} else
 				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
-				//Check if we should mark record for removal, after 12 hours
-				if booking.EpochEnd < time.Now().Add(-time.Hour*12).Unix() {
+				//Check if we should mark record for removal, after 24 hours
+				if booking.EpochEnd < time.Now().Add(-time.Hour*24).Unix() {
 					//log.Println("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
 					booking.State = "Delete"
 					booking.Message = "Booking marked for Delete"
@@ -1535,7 +1535,10 @@ func jsonServer() error {
 			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
 				bookings = append(bookings[:i], bookings[i+1:]...)
 				//Cancel a Boat when you update it, while it is finished
-				if booking.State == "Finished" || booking.State == "Confirmed" {
+				if (booking.State == "Finished" || booking.State == "Confirmed") &&
+					(shortDate(booking.Date) != shortDate(updated_booking.Date) ||
+						booking.Duration != updated_booking.Duration ||
+						booking.Name != updated_booking.Name) {
 					boatCancel(&booking)
 				}
 				bookings = append(bookings, *updated_booking)
