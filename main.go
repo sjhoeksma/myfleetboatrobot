@@ -1376,7 +1376,11 @@ func errorHandler(err error, c echo.Context) {
 	} else {
 		report = echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	makeLogEntry(c).Error(report.Message)
+	if report.Code == 401 {
+		makeLogEntry(c).Debug(report.Message)
+	} else {
+		makeLogEntry(c).Error(report.Message)
+	}
 	c.HTML(report.Code, report.Message.(string))
 }
 
