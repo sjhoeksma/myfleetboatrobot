@@ -3,7 +3,6 @@
 ##
 # pull official base image
 FROM node:16.12.0-alpine AS APP
-
 # set working directory
 WORKDIR /app
 
@@ -23,6 +22,7 @@ RUN npm run build
 ## SERVER
 ##
 FROM golang:1.18-alpine AS SERVER
+RUN apk add --no-cache build-base
 WORKDIR /app
 
 COPY go.mod ./
