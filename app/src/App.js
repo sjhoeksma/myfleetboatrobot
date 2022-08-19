@@ -16,9 +16,10 @@ var idleTimer = 0
 const App = () => {
 
   const [booking, setBooking] = useState([]);
-  const [boat, setBoat] = useState([]);
+  const [boats, setBoats] = useState([]);
   const [users, setUsers] = useState([]);
   const [config, setConfig] = useState([]);
+  const [whatsapps, setWhatsApps] = useState([]);
   const [iserror, setIserror] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
@@ -30,7 +31,7 @@ const App = () => {
      <Autocomplete
           freeSolo
           id="boats"
-          options={boat}
+          options={boats}
           value={props.value}
           renderInput={params => {
             return (
@@ -122,8 +123,46 @@ const App = () => {
             value={props.value}
             onChange={e => props.onChange(e.target.value)} 
         />) },
-    { title: 'Comment', field: 'comment', editable : 'onAdd', sorting :false },
     { title: 'Repeat', field: 'repeat', sorting :false, type : 'boolean' },
+    { title: 'Comment', field: 'comment', editable : 'onAdd', sorting :false },
+    { title: 'WhatsApp', field: 'whatsapp', sorting :false , hidden : !(config ? config.whatsapp : false), 
+    editComponent: props => (
+      <Autocomplete
+           freeSolo
+           id="whatsappid"
+           options={whatsapps}
+           getOptionLabel={(option) => { 
+            return (!option || typeof option === "string" || option instanceof String) ? option: option.to
+          }}
+           value={props.value}
+           renderInput={params => {
+             return (
+               <TextField
+                 {...params}
+                 fullWidth
+               />
+             );
+           }}
+          onChange={e =>{if (e) props.onChange(e.target.innerText)}}
+          onInputChange={e =>{if (e) props.onChange(e.target.value)}}
+          /*
+           onChange={(e,v) =>{
+            if (e && e.target && e.target.innerText) {
+              props.onChange(e.target.innerText)
+            } else {
+              props.onChange(v)
+            }
+          }}
+           onInputChange={(e,v) =>{
+            if (e && e.target && e.target.value) {
+               props.onChange(e.target.value)
+            } else {
+              props.onChange(v)
+            }
+          }}
+          */
+         />)
+     },
     { title: 'Message', field: 'message', editable : 'never', sorting :false  },
     { title: 'UserComment', field: 'usercomment', type : 'boolean', hidden: true  },
     { title: 'Id', field: 'id', hidden: true },
@@ -143,7 +182,7 @@ const App = () => {
     axios.get(`${url}boat`)
     .then(res => {
       const boat = res.data;
-      setBoat(boat);
+      setBoats(boat);
       //console.log(boat);
     })
     //return boat
@@ -169,11 +208,23 @@ const App = () => {
     })
     //return users
   }
+
+  const refreshWhatsApp = () =>{
+    axios.get(`${url}whatsapp`)
+    .then(res => {
+      const whatsapp = res.data;
+      setWhatsApps(whatsapp);
+      //console.log(whatsapp);
+    })
+    //return whatsapp
+  }
+
   useEffect(() => {
     refreshConfig()
     refreshData()
     refreshBoat()
     refreshUsers()
+    refreshWhatsApp()
    }, [])
  
 
@@ -215,6 +266,7 @@ const App = () => {
           setErrorMessages([])
           resolve()
           refreshUsers()
+          refreshWhatsApp()
         })
         .catch(error => {
           setErrorMessages(["Update failed! Server error"])
@@ -283,6 +335,7 @@ const App = () => {
           setIserror(false)
           resolve()
           refreshUsers()
+          refreshWhatsApp()
         })
         .catch(error => {
           setErrorMessages(["Cannot add data. Server error!"])

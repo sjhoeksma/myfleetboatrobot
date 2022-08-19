@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -24,23 +25,36 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
+	"google.golang.org/protobuf/proto"
+
+	_ "github.com/mattn/go-sqlite3"
+	qrterminal "github.com/mdp/qrterminal"
+	"go.mau.fi/whatsmeow"
+	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var Version = "0.4.1"                 //The version of application
-var myFleetVersion = "R1B34"          //The software version of myFleet
-var clubId = "rvs"                    //The club code
-var bookingFile = "json/booking.json" //The json file to store bookings in
-var boatFile = "json/boats.json"      //The json file to store boats
-var userFile = "json/users.json"      //The json file to store users
-var timeZoneLoc = "Europe/Amsterdam"  //The time zone location for the club
-var timeZone = "+02:00"               //The time zone in hour, is also calculated
-var minDuration = 60                  //The minimal duration required to book
-var maxDuration = 120                 //The maximal duration allowed to book
-var bookWindow = 48                   //The number of hours allowed to book
-var confirmTime = 10                  //Time in Min before before starting time to confirm booking, 0=Disabled
-var maxRetry int = 0                  //The maximum numbers of retry before we give up, 0=disabled
-var refreshInterval int = 1           //We do a check of the database every 1 minute
-var logLevel string = "Info"          //Default loglevel is info
+var Version = "0.5.0"                   //The version of application
+var myFleetVersion = "R1B34"            //The software version of myFleet
+var clubId = "rvs"                      //The club code
+var bookingFile = "json/booking.json"   //The json file to store bookings in
+var boatFile = "json/boats.json"        //The json file to store boats
+var userFile = "json/users.json"        //The json file to store users
+var whatsAppFile = "json/whatsapp.json" //The json file to store whatsapp info
+var whatsAppDb = "json/whatsapp.db"     //The db file to store whatsapp sessions
+var timeZoneLoc = "Europe/Amsterdam"    //The time zone location for the club
+var timeZone = "+02:00"                 //The time zone in hour, is also calculated
+var minDuration = 60                    //The minimal duration required to book
+var maxDuration = 120                   //The maximal duration allowed to book
+var bookWindow = 48                     //The number of hours allowed to book
+var confirmTime = 10                    //Time in Min before before starting time to confirm booking, 0=Disabled
+var maxRetry int = 0                    //The maximum numbers of retry before we give up, 0=disabled
+var refreshInterval int = 1             //We do a check of the database every 1 minute
+var logLevel string = "Info"            //Default loglevel is info
+var whatsApp bool = false               //The whatsapp group to send message to
 
 //Convert boat to code
 var boatFilter = map[string]string{
@@ -76,6 +90,22 @@ var boatFilter = map[string]string{
 	"Zeilwherry": "57",
 }
 
+//Used to map specify when to send a whatsapp message
+var sendWhatsAppMsg = map[string]bool{
+	"Finished":  true,
+	"Blocked":   true,
+	"Failed":    true,
+	"Confirmed": true,
+	/*
+		"Canceled": false,
+		"Retry":    false,
+		"Delete":   false,
+		"Waiting":  false,
+		"Cancel":   false,
+		"Moving":   false,
+	*/
+}
+
 //Used to convert months into date
 var maandFilter = map[string]string{
 	"januari":   "01",
@@ -99,6 +129,12 @@ type UserInterface struct {
 	LastUsed int64  `json:"lastused"`
 }
 
+//Struc used to store user info
+type WhatsAppInterface struct {
+	To       string `json:"to"`
+	LastUsed int64  `json:"lastused"`
+}
+
 //Struc used to store boat and session info
 type BookingInterface struct {
 	Id          int64          `json:"id"`
@@ -118,6 +154,7 @@ type BookingInterface struct {
 	EpochNext   int64          `json:"next,omitempty"`
 	Retry       int            `json:"retry,omitempty"`
 	UserComment bool           `json:"usercomment,omitempty"`
+	WhatsApp    string         `json:"whatsapp,omitempty"`
 	TimeZone    string         `json:"-"`
 	Cookies     []*http.Cookie `json:"-"`
 	Bookings    *[][]string    `json:"-"`
@@ -125,6 +162,7 @@ type BookingInterface struct {
 	EpochStart  int64          `json:"-"`
 	EpochEnd    int64          `json:"-"`
 	Authorized  bool           `json:"-"`
+	Changed     bool           `json:"-"`
 }
 
 //The list of bookings
@@ -141,7 +179,7 @@ type BoatListInterface struct {
 	Boats      *[][]string
 }
 
-var singleRun bool = true             //Should we do a single runonly = nowebserver
+var singleRun bool = false            //Should we do a single runonly = nowebserver
 var commentPrefix string = "MYFR:"    //The prefix we use as a comment indicator the booking is ours
 var bindAddress string = ":1323"      //The default bind port of web server
 var jsonUser string                   //The Basic Auth user of webserer
@@ -152,6 +190,7 @@ var guiUrl string                     //The gui url towards the fleet.eu backend
 var test string = ""                  //The test we should be running, means allways single ru
 var title string = ""                 //The title string
 var mutex *sync.Mutex = &sync.Mutex{} //The lock used where writing files
+var whatsAppClient *whatsmeow.Client  //The Whatsappclient
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -219,11 +258,12 @@ func Init() {
 	flag.StringVar(&myFleetVersion, "fleetVersion", myFleetVersion, "The version of the myFleet software to use")
 	flag.StringVar(&logLevel, "logLevel", logLevel, "The log level to use")
 	flag.StringVar(&title, "title", title, "The title to use in app")
+	flag.BoolVar(&whatsApp, "whatsApp", whatsApp, "Should we use WhatsApp to send a message")
 	flag.StringVar(&test, "test", test, "The test action to perform")
 
 	flag.Parse() // after declaring flags we need to call it
 	if *version {
-		log.Println("Version ", Version)
+		log.Info("Version ", Version)
 		os.Exit(0)
 	}
 	//When test action is specified we are allways in singlerun
@@ -865,11 +905,51 @@ func readBoatJson() []string {
 }
 
 //Read the  user info
+func readWhatsAppJson() []WhatsAppInterface {
+	var b []WhatsAppInterface
+	var u WhatsAppInterface = WhatsAppInterface{To: "?"}
+	b = append(b, u)
+	if _, err := os.Stat(whatsAppFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
+	file, err := ioutil.ReadFile(whatsAppFile)
+	if err == nil {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return b
+}
+
+//Write the user info to file
+func writeWhatsAppJson(data []WhatsAppInterface) {
+	if _, err := os.Stat(whatsAppFile); os.IsNotExist(err) {
+		err := os.MkdirAll(filepath.Dir(whatsAppFile), 0644) // Create your file
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	for i := len(data) - 1; i >= 0; i-- {
+		if data[i].To == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
+			data = append(data[:i], data[i+1:]...)
+		}
+	}
+	json_to_file, _ := json.Marshal(data)
+	mutex.Lock()
+	err := ioutil.WriteFile(whatsAppFile, json_to_file, 0644)
+	mutex.Unlock()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+//Read the  user info
 func readUsersJson() []UserInterface {
 	var b []UserInterface
 	var u UserInterface = UserInterface{Username: "?", Password: "?"}
 	b = append(b, u)
-	if _, err := os.Stat(boatFile); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(userFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
 	file, err := ioutil.ReadFile(userFile)
@@ -977,7 +1057,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 			//Convert the current start end times to Epoch
 			times := strings.Fields(bb[2]) //10:00 - 12:00
-			//log.Println("boat", bb)
 			thetime, _ := time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[0]+":00"+b.TimeZone)
 			startTime := thetime.Unix()
 			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
@@ -1006,7 +1085,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					}
 					return true, errors.New("booking blocked by " + bb[3])
 				}
-				//log.Println("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
+				log.Debug("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
 				//Skip to next boat because we are not looking for this one
 				continue
 			}
@@ -1038,7 +1117,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			newEndTime := MinInt64(boatList.EpochEnd, b.EpochEnd)
 			newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-b.Duration*60))
 			newStartTime = MaxInt64(newStartTime, boatList.SunRise)
-			//log.Println("Epoch", startTime, newStartTime, endTime, newEndTime, b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet, bb)
+			//log.Debug("Epoch", startTime, newStartTime, endTime, newEndTime, b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet, bb)
 
 			//Check if their is a reason to update the booking
 
@@ -1070,7 +1149,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Check if we should mark record for removal, after 12 hours
 	if b.EpochEnd < time.Now().Add(-time.Hour*24).Unix() {
-		//log.Println("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
+		log.Debug("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
 		b.State = "Delete"
 		b.Message = "Booking marked for Delete"
 		return true, nil
@@ -1179,7 +1258,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 //The main loop in which we do all the booking processing
 func bookLoop() {
-	log.Println("Start processing")
+	log.Info("Start processing")
 	var changed bool = false
 	//Timing loop
 	for {
@@ -1198,6 +1277,7 @@ func bookLoop() {
 				log.Error("date not valid yyyy-MM-dd")
 				booking.State = "Failed"
 				booking.Message = "date not valid yyyy-MM-dd"
+				booking.Changed = true
 				changed = true
 				bookingSlice[i] = booking
 				continue
@@ -1208,6 +1288,7 @@ func bookLoop() {
 				log.Error("time not valid hh:mm")
 				booking.State = "Failed"
 				booking.Message = "time not valid hh:mm"
+				booking.Changed = true
 				changed = true
 				bookingSlice[i] = booking
 				continue
@@ -1234,6 +1315,7 @@ func bookLoop() {
 				if err == nil {
 					booking.State = "Confirmed"
 					booking.Message = "Booking confirmed"
+					booking.Changed = true
 					bookingSlice[i] = booking
 					changed = true
 					continue
@@ -1247,6 +1329,7 @@ func bookLoop() {
 				if booking.Repeat && booking.EpochEnd < time.Now().Unix() {
 					booking.State = "Repeat"
 					booking.Message = "Booking is repeating"
+					booking.Changed = true
 					booking.BookingId = ""
 					booking.Date = time.Unix(booking.EpochStart, 0).Add(time.Duration(7*24) * time.Hour).Format("2006-01-02")
 					bookingSlice[i] = booking
@@ -1255,9 +1338,10 @@ func bookLoop() {
 				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
 				//Check if we should mark record for removal, after 24 hours
 				if booking.EpochEnd < time.Now().Add(-time.Hour*24).Unix() {
-					//log.Println("Delete", b.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
+					log.Debug("Delete", booking.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
 					booking.State = "Delete"
 					booking.Message = "Booking marked for Delete"
+					booking.Changed = true
 					bookingSlice[i] = booking
 					changed = true
 				}
@@ -1285,12 +1369,14 @@ func bookLoop() {
 				booking.Retry++
 				booking.State = "Error"
 				booking.Message = err.Error()
+				booking.Changed = true
 				vchanged = true
 			}
 
 			//If data has been changed update the booking array
 			if vchanged {
 				changed = true
+				booking.Changed = true
 				//Sleep the booking for at least 15 min
 				booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
 				bookingSlice[i] = booking
@@ -1324,6 +1410,37 @@ func bookLoop() {
 		//Save the change to the bookingFile on changed data
 		if changed {
 			writeJson(bookingSlice)
+			//Check if we should send a whatsapp message
+			if whatsApp && whatsAppClient != nil && whatsAppClient.IsConnected() {
+				//Send a message for all bookings with same to
+				var list = map[string][]BookingInterface{}
+				for _, b := range bookingSlice {
+					if b.Changed && b.WhatsApp != "" {
+						list[b.State+":"+b.WhatsApp] = append(list[b.State+":"+b.WhatsApp], b)
+					}
+				}
+				//Finished: Amalthea, Argus, Artemis and Lynx at 9:30 uur.
+				for k, v := range list {
+					var msg string
+					var ks = strings.Split(k, ":")
+					if len(v) == 1 {
+						msg = v[0].Name
+					} else {
+						for i, b := range v {
+							if i == len(v)-1 {
+								msg = msg + " and "
+							} else if i > 0 {
+								msg = msg + ", "
+							}
+							msg = msg + b.Name
+						}
+					}
+					msg = strings.ToLower(ks[0]) + ": " + msg + " at " + shortTime(v[0].Time) + " hour."
+					if sendWhatsAppMsg[ks[0]] {
+						sendWhatsApp(ks[1], msg)
+					}
+				}
+			}
 		}
 
 		//Exit if we are in single run mode
@@ -1407,13 +1524,15 @@ func jsonServer() error {
 	}))
 
 	e.GET("/data/config", func(c echo.Context) error {
-		var versionData = map[string]string{"version": Version,
-			"interval":       strconv.FormatInt(int64(refreshInterval), 10),
+		var versionData = map[string]interface{}{
+			"version":        Version,
+			"interval":       refreshInterval,
 			"prefix":         commentPrefix,
 			"clubid":         clubId,
 			"myfleetVersion": myFleetVersion,
 			"timezone":       timeZone,
 			"title":          title,
+			"whatsapp":       whatsApp && whatsAppClient != nil && whatsAppClient.IsConnected(),
 		}
 		return c.JSON(http.StatusOK, versionData)
 	})
@@ -1442,6 +1561,11 @@ func jsonServer() error {
 	g.GET("/users", func(c echo.Context) error {
 		users := readUsersJson()
 		return c.JSON(http.StatusOK, users)
+	})
+
+	g.GET("/whatsapp", func(c echo.Context) error {
+		whatsappData := readWhatsAppJson()
+		return c.JSON(http.StatusOK, whatsappData)
 	})
 
 	g.POST("/booking", func(c echo.Context) error {
@@ -1488,10 +1612,22 @@ func jsonServer() error {
 				break
 			}
 		}
-		if !found {
-			users = append(users, UserInterface{Username: new_booking.Username, Password: new_booking.Password, LastUsed: time.Now().Unix()})
+
+		//Add whatsapp to whatsapp file
+		whatsappData := readWhatsAppJson()
+		found = false
+		for i, d := range whatsappData {
+			if strings.EqualFold(d.To, new_booking.WhatsApp) {
+				whatsappData[i].LastUsed = time.Now().Unix()
+				found = true
+				break
+			}
 		}
-		writeUsersJson(users)
+
+		if !found && new_booking.WhatsApp != "" {
+			whatsappData = append(whatsappData, WhatsAppInterface{To: new_booking.WhatsApp, LastUsed: time.Now().Unix()})
+		}
+		writeWhatsAppJson(whatsappData)
 		return c.JSON(http.StatusOK, bookings)
 	})
 
@@ -1590,18 +1726,119 @@ func jsonServer() error {
 	return e.Start(bindAddress)
 }
 
+//Whatsapp logger stuff
+type stdoutLogger struct{}
+
+func (s *stdoutLogger) Errorf(msg string, args ...interface{}) { log.Errorf(msg, args...) }
+func (s *stdoutLogger) Warnf(msg string, args ...interface{})  { log.Warnf(msg, args...) }
+func (s *stdoutLogger) Infof(msg string, args ...interface{})  { log.Infof(msg, args...) }
+func (s *stdoutLogger) Debugf(msg string, args ...interface{}) { log.Debugf(msg, args...) }
+func (s *stdoutLogger) Sub(_ string) waLog.Logger              { return s }
+
+//The event logger
+func whatsAppEventHandler(evt interface{}) {
+	switch v := evt.(type) {
+	case *events.Message:
+		log.Info("Received a message!", v.Message.GetConversation())
+	}
+}
+
+//Send a whatsapp message
+func sendWhatsApp(name string, msg string) {
+	if whatsAppClient != nil && whatsAppClient.IsConnected() {
+		//Check out if whe should send message to server of user
+		groups, _ := whatsAppClient.GetJoinedGroups()
+		for _, g := range groups {
+			if strings.EqualFold(g.GroupName.Name, name) {
+				_, err := whatsAppClient.SendMessage(context.Background(), g.JID, "",
+					&waProto.Message{
+						Conversation: proto.String(msg),
+					})
+				if err != nil {
+					log.Error("Failed to send whatsapp", err)
+				}
+				return
+			}
+		}
+		//Not found send the message to name
+		if _, err := strconv.ParseInt(name, 10, 64); err == nil {
+			_, err := whatsAppClient.SendMessage(context.Background(), types.JID{
+				User:   name,
+				Server: types.DefaultUserServer,
+			}, "",
+				&waProto.Message{
+					Conversation: proto.String(msg),
+				})
+			if err != nil {
+				log.Error("Failed to send whatsapp", err)
+			}
+		} else {
+			log.Error("Failed to send whatsapp not a number", name)
+		}
+	}
+}
+
+//The whatsAppServer
+func whatsAppServer() {
+	log.Info("Start WhatsApp")
+	var clientLog waLog.Logger = &stdoutLogger{}
+	container, err := sqlstore.New("sqlite3", "file:"+whatsAppDb+"?_foreign_keys=on", clientLog)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	// If you want multiple sessions, remember their JIDs and use .GetDevice(jid) or .GetAllDevices() instead.
+	deviceStore, err := container.GetFirstDevice()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	whatsAppClient = whatsmeow.NewClient(deviceStore, clientLog)
+	whatsAppClient.AddEventHandler(whatsAppEventHandler)
+
+	if whatsAppClient.Store.ID == nil {
+		// No ID stored, new login
+		qrChan, _ := whatsAppClient.GetQRChannel(context.Background())
+		err = whatsAppClient.Connect()
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		for evt := range qrChan {
+			if evt.Event == "code" {
+				// Render the QR code here
+				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, log.New().WriterLevel(log.InfoLevel))
+			} else {
+				log.Info("Login event:", evt.Event)
+			}
+		}
+	} else {
+		// Already logged in, just connect
+		err = whatsAppClient.Connect()
+		if err != nil {
+			log.Error(err)
+		}
+	}
+}
+
 func main() {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-c
-		log.Println("Waiting for clean Exit")
+		log.Info("Waiting for clean Exit")
+		if whatsAppClient != nil {
+			whatsAppClient.Disconnect()
+		}
 		mutex.Lock()
 		os.Exit(0)
 	}()
 	Init()
 	if !singleRun {
 		go bookLoop()
+		if whatsApp {
+			go whatsAppServer()
+		}
 		err := jsonServer()
 		if err != nil {
 			log.Fatal(err)
@@ -1611,20 +1848,14 @@ func main() {
 		case "login_response":
 			file, _ := ioutil.ReadFile("html/login-response.html")
 			str := string(file)
-			log.Println("login_response", readbookingList(&str))
-		case "update":
-			booking := BookingInterface{BoatId: "75", Name: "d'Armandville", BookingId: "443333", TimeZone: timeZone,
-				Duration: 90, Username: "SP3426", Password: "SP3426", Date: "2022-08-02", Time: "10:00", Comment: "Sierk"}
-			thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+shortTime(booking.Time)+":00"+booking.TimeZone)
-			booking.EpochStart = thetime.Unix()
-			err := boatUpdate(&booking, thetime.Add(15*time.Minute).Unix(), thetime.Add(time.Duration(15+booking.Duration)*time.Minute).Unix())
-			log.Println("C2", booking.Cookies)
-			if err != nil {
-				log.Fatal(err)
-			}
+			log.Info("login_response", readbookingList(&str))
 		case "boatlist":
 			os.Remove(boatFile)
-			log.Println("BoatList", readBoatJson())
+			log.Info("BoatList", readBoatJson())
+		case "whatsapp":
+			whatsAppServer()
+			sendWhatsApp("MyFleet Robot", "Robot Test Message")
+			whatsAppClient.Disconnect()
 		default:
 			bookLoop()
 		}
