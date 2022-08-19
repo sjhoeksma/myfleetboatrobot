@@ -45,4 +45,4 @@ COPY --from=APP /app/build /app/public
 
 EXPOSE 1323
 
-CMD [ "/app/server", "-singleRun=false" ]
+CMD [ "/app/server" ]
