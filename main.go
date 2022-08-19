@@ -54,7 +54,7 @@ var confirmTime = 10                    //Time in Min before before starting tim
 var maxRetry int = 0                    //The maximum numbers of retry before we give up, 0=disabled
 var refreshInterval int = 1             //We do a check of the database every 1 minute
 var logLevel string = "Info"            //Default loglevel is info
-var whatsApp bool = false               //The whatsapp group to send message to
+var whatsApp bool = true                //The whatsapp group to send message to
 
 //Convert boat to code
 var boatFilter = map[string]string{
