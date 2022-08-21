@@ -1,5 +1,5 @@
 ##
-## Build node app
+## Build REACT application (APP)
 ##
 # pull official base image
 FROM node:16.12.0-alpine AS APP
@@ -11,17 +11,16 @@ ENV PATH /app/node_modules/.bin:$PATH
 
 # install app dependencies
 COPY ./app/ ./
-#COPY ./app/package.json ./
-#COPY ./app/package-lock.json ./
 RUN npm install
 
 # Build App
 RUN npm run build
 
 ##
-## SERVER
+## Build MyFleet Robot (SERVER)
 ##
 FROM golang:1.18-alpine AS SERVER
+#GCC is required by SQLLite3
 RUN apk add --no-cache build-base
 WORKDIR /app
 
@@ -34,9 +33,10 @@ COPY *.go ./
 RUN go build -v -o server
 
 ###
-## DEPLOY
+## Deploy using minimal apline image
 ##
 FROM alpine:latest 
+#Timzeone package is required by Server
 RUN apk add --no-cache tzdata
 WORKDIR /app
 
@@ -45,4 +45,4 @@ COPY --from=APP /app/build /app/public
 
 EXPOSE 1323
 
-CMD [ "/app/server" ]
+ENTRYPOINT [ "/app/server" ]

@@ -1,15 +1,15 @@
 # MyFleet Robot
-With is program you can automate booking a element of you club if the fleet is managed by: [my-feel.eu](https://my-fleet.eu/).
+With is program you can automate booking a element of you club if the fleet is managed by: [my-fleet.eu](https://my-fleet.eu/).
 
 The default values within the system are for the club **HetSpaarne** but you can change it by setting the clubId parameter.
 
-The system supports whatsapp sending of message. When enabling you should once scan the whatsapp code dumped in the logfile.
+The system supports whatsapp sending of message. By default enabled an you should once scan the whatsapp code dumped in the logfile.
  
 ## Building Development
 
-For development you can use to run the backend part and enable whatsapp. Default server port is 1323
+For development you can use to run the backend part and whatsapp disabled. Default server port is 1323
 ```
-go run main.go -whatsapp=true
+go run main.go -whatsApp=false -logLevel=DEBUG
 ```
 and for the front end you can use the command below. The app wil be running on port 3000
 ```
@@ -35,6 +35,14 @@ docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name=fleetrobot -
 ```
 
 # ToDo
+* WhatsApp multiple groups with ,
+* Edit of finished
+* Passing commandline vars in docker
+* Implement confirmation
+* Login by team and use this as filter of data (file by team)
+* Allways a 2 step delete --> cancel -- Canceled -- delete
+* Add planner function
+* Add Prefered boats by number of users
 
 
 # How the system finds a slot

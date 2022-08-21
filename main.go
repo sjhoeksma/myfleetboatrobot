@@ -37,7 +37,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var Version = "0.5.0"                   //The version of application
+var Version = "0.5.1"                   //The version of application
 var myFleetVersion = "R1B34"            //The software version of myFleet
 var clubId = "rvs"                      //The club code
 var bookingFile = "json/booking.json"   //The json file to store bookings in
@@ -216,6 +216,14 @@ func setEnvValue(key string, item *string) {
 	}
 }
 
+//Function to get an ENV variable and put it into a string
+func setEnvBoolValue(key string, item *bool) {
+	s := os.Getenv(key)
+	if s != "" {
+		*item, _ = strconv.ParseBool(s)
+	}
+}
+
 //Make from a long date string a short one
 func shortDate(date string) string {
 	return strings.Split(date, "T")[0]
@@ -242,6 +250,7 @@ func Init() {
 	setEnvValue("FLEETVERSION", &myFleetVersion)
 	setEnvValue("LOGLEVEL", &logLevel)
 	setEnvValue("TITLE", &title)
+	setEnvBoolValue("WHATSAPP", &whatsApp)
 
 	version := flag.Bool("version", false, "Prints current version ("+Version+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
@@ -1085,7 +1094,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					}
 					return true, errors.New("booking blocked by " + bb[3])
 				}
-				log.Debug("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
+				//log.Debug("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
 				//Skip to next boat because we are not looking for this one
 				continue
 			}
@@ -1264,149 +1273,143 @@ func bookLoop() {
 	for {
 		//TODO: We should read it from file or json url
 		bookingSlice := readJson()
-		for i, booking := range bookingSlice {
-			//Step 0: Data convertions
+		wg := sync.WaitGroup{}
+		for i := range bookingSlice {
+			wg.Add(1)
+			//We process a booking in parallel
+			go func(booking *BookingInterface, changed *bool, wg *sync.WaitGroup) {
+				var err error
+				//At return of parallel task we changed decrease WaitGroup and log if changed
+				defer func() {
+					//If data has been changed update the booking array
+					if booking.Changed {
+						*changed = true
+						//Sleep the booking for at least 15 min
+						booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
+						loc, _ := time.LoadLocation(timeZoneLoc)
+						nextStr := time.Unix(booking.EpochNext, 0).In(loc).Format("15:04")
+						if err != nil {
+							log.WithFields(log.Fields{
+								"state": booking.State,
+								"boat":  booking.Name,
+								"user":  booking.Username,
+								"at":    shortDate(booking.Date),
+								"from":  shortTime(booking.Time),
+								"next":  shortTime(nextStr),
+							}).Error(err)
+						} else {
+							log.WithFields(log.Fields{
+								"state": booking.State,
+								"boat":  booking.Name,
+								"user":  booking.Username,
+								"at":    shortDate(booking.Date),
+								"from":  shortTime(booking.Time),
+								"next":  shortTime(nextStr),
+							}).Info(booking.Message)
+						}
+					}
+					wg.Done()
+				}()
+				//Set the timezone
+				booking.TimeZone = timeZone
 
-			//Set the timezone
-			//TODO: Do Winter and Summer time checking
-			booking.TimeZone = timeZone
-
-			//Set the correct EpochDatas
-			thetime, err := time.Parse(time.RFC3339, shortDate(booking.Date)+"T00:00:00"+booking.TimeZone)
-			if err != nil {
-				log.Error("date not valid yyyy-MM-dd")
-				booking.State = "Failed"
-				booking.Message = "date not valid yyyy-MM-dd"
-				booking.Changed = true
-				changed = true
-				bookingSlice[i] = booking
-				continue
-			}
-			booking.EpochDate = thetime.Unix()
-			thetime, err = time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+shortTime(booking.Time)+":00"+booking.TimeZone)
-			if err != nil {
-				log.Error("time not valid hh:mm")
-				booking.State = "Failed"
-				booking.Message = "time not valid hh:mm"
-				booking.Changed = true
-				changed = true
-				bookingSlice[i] = booking
-				continue
-			}
-
-			//Set the minimal duration
-			if booking.Duration < int64(minDuration) {
-				booking.Duration = int64(minDuration)
-			}
-			//Set the maximal duration
-			if booking.Duration > int64(maxDuration) {
-				booking.Duration = int64(maxDuration)
-			}
-
-			booking.EpochStart = thetime.Unix()
-			thetime = thetime.Add(time.Minute * time.Duration(booking.Duration))
-			booking.EpochEnd = thetime.Unix()
-
-			//Check if we should confirm the booking
-			if booking.State == "Finished" && confirmTime != 0 &&
-				time.Unix(booking.EpochStart, 0).Add(-time.Duration(confirmTime)*time.Minute).Unix() >= time.Now().Unix() &&
-				time.Unix(booking.EpochStart, 0).Unix() <= time.Now().Unix() {
-				err = confirmBoat(&booking)
-				if err == nil {
-					booking.State = "Confirmed"
-					booking.Message = "Booking confirmed"
-					booking.Changed = true
-					bookingSlice[i] = booking
-					changed = true
-					continue
-				}
-			}
-
-			//Check if have allready processed the booking, if so skip it
-			if booking.State == "Finished" || booking.State == "Comfirmed" || booking.State == "Canceled" ||
-				booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
-				//Check if we should repeat this item
-				if booking.Repeat && booking.EpochEnd < time.Now().Unix() {
-					booking.State = "Repeat"
-					booking.Message = "Booking is repeating"
-					booking.Changed = true
-					booking.BookingId = ""
-					booking.Date = time.Unix(booking.EpochStart, 0).Add(time.Duration(7*24) * time.Hour).Format("2006-01-02")
-					bookingSlice[i] = booking
-					changed = true
-				} else
-				//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
-				//Check if we should mark record for removal, after 24 hours
-				if booking.EpochEnd < time.Now().Add(-time.Hour*24).Unix() {
-					log.Debug("Delete", booking.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
-					booking.State = "Delete"
-					booking.Message = "Booking marked for Delete"
-					booking.Changed = true
-					bookingSlice[i] = booking
-					changed = true
-				}
-				continue
-			}
-
-			//Check if comment is set, if not fill default
-			if !booking.UserComment {
-				booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
-			}
-
-			//The message will be rest after every run
-			booking.Message = ""
-
-			//Step 1: Login
-			err = login(&booking)
-			if err != nil {
-				log.Error(err)
-				continue
-			}
-
-			//Step 2: doBooking
-			vchanged, err := doBooking(&booking)
-			if err != nil {
-				booking.Retry++
-				booking.State = "Error"
-				booking.Message = err.Error()
-				booking.Changed = true
-				vchanged = true
-			}
-
-			//If data has been changed update the booking array
-			if vchanged {
-				changed = true
-				booking.Changed = true
-				//Sleep the booking for at least 15 min
-				booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
-				bookingSlice[i] = booking
-				loc, _ := time.LoadLocation(timeZoneLoc)
-				nextStr := time.Unix(booking.EpochNext, 0).In(loc).Format("15:04")
+				//Set the correct EpochDatas
+				thetime, err := time.Parse(time.RFC3339, shortDate(booking.Date)+"T00:00:00"+booking.TimeZone)
 				if err != nil {
-					log.WithFields(log.Fields{
-						"state": booking.State,
-						"boat":  booking.Name,
-						"user":  booking.Username,
-						"at":    shortDate(booking.Date),
-						"from":  shortTime(booking.Time),
-						"next":  shortTime(nextStr),
-					}).Error(err)
-				} else {
-					log.WithFields(log.Fields{
-						"state": booking.State,
-						"boat":  booking.Name,
-						"user":  booking.Username,
-						"at":    shortDate(booking.Date),
-						"from":  shortTime(booking.Time),
-						"next":  shortTime(nextStr),
-					}).Info(booking.Message)
+					log.Error("date not valid yyyy-MM-dd")
+					booking.State = "Failed"
+					booking.Message = "date not valid yyyy-MM-dd"
+					booking.Changed = true
+					return
 				}
-			}
+				booking.EpochDate = thetime.Unix()
+				thetime, err = time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+shortTime(booking.Time)+":00"+booking.TimeZone)
+				if err != nil {
+					log.Error("time not valid hh:mm")
+					booking.State = "Failed"
+					booking.Message = "time not valid hh:mm"
+					booking.Changed = true
+					return
+				}
 
-			//Step 3: logout
-			logout(&booking)
+				//Set the minimal duration
+				if booking.Duration < int64(minDuration) {
+					booking.Duration = int64(minDuration)
+				}
+				//Set the maximal duration
+				if booking.Duration > int64(maxDuration) {
+					booking.Duration = int64(maxDuration)
+				}
+
+				booking.EpochStart = thetime.Unix()
+				thetime = thetime.Add(time.Minute * time.Duration(booking.Duration))
+				booking.EpochEnd = thetime.Unix()
+
+				//Check if we should confirm the booking
+				if booking.State == "Finished" && confirmTime != 0 &&
+					time.Now().Unix() >= time.Unix(booking.EpochStart, 0).Add(-time.Duration(confirmTime)*time.Minute).Unix() && time.Now().Unix() <= time.Unix(booking.EpochStart, 0).Unix() {
+					err = confirmBoat(booking)
+					if err == nil {
+						booking.State = "Confirmed"
+						booking.Message = "Booking confirmed"
+						booking.Changed = true
+						return
+					}
+				}
+
+				//Check if have allready processed the booking, if so skip it
+				if booking.State == "Finished" || booking.State == "Comfirmed" || booking.State == "Canceled" ||
+					booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
+					//Check if we should repeat this item
+					if booking.Repeat && booking.EpochEnd < time.Now().Unix() {
+						booking.State = "Repeat"
+						booking.Message = "Booking is repeated"
+						booking.Changed = true
+						booking.BookingId = ""
+						booking.Date = time.Unix(booking.EpochStart, 0).Add(time.Duration(7*24) * time.Hour).Format("2006-01-02")
+					} else
+					//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
+					//Check if we should mark record for removal, after 24 hours
+					if booking.EpochEnd < time.Now().Add(-time.Hour*24).Unix() {
+						log.Debug("Delete", booking.EpochEnd, "<", time.Now().Add(-time.Hour*12).Unix())
+						booking.State = "Delete"
+						booking.Message = "Booking marked for Delete"
+						booking.Changed = true
+					}
+					return
+				}
+
+				//Check if comment is set, if not fill default
+				if !booking.UserComment {
+					booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
+				}
+
+				//The message will be rest after every run
+				booking.Message = ""
+
+				//Step 1: Login
+				err = login(booking)
+				if err != nil {
+					log.Error(err)
+					return
+				}
+
+				//Step 2: doBooking
+				booking.Changed, err = doBooking(booking)
+				if err != nil {
+					booking.Retry++
+					booking.State = "Error"
+					booking.Message = err.Error()
+					booking.Changed = true
+				}
+
+				//Step 3: logout
+				logout(booking)
+
+				//Step 4: Call the defer and create logs if needed
+			}(&bookingSlice[i], &changed, &wg)
 		}
-
+		wg.Wait()
 		//Save the change to the bookingFile on changed data
 		if changed {
 			writeJson(bookingSlice)
@@ -1511,6 +1514,7 @@ func jsonServer() error {
 	g := e.Group("/data")
 	if jsonProtect {
 		g.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+			//log.Debug("Basic",  base64.StdEncoding.DecodeToString((c.Request().Header["Authorization"]))
 			if username == jsonUser && password == jsonPwd {
 				return true, nil
 			}
@@ -1754,6 +1758,10 @@ func sendWhatsApp(name string, msg string) {
 					&waProto.Message{
 						Conversation: proto.String(msg),
 					})
+				log.WithFields(log.Fields{
+					"msg": msg,
+					"to":  name,
+				}).Info("Sending Group Whatsapp")
 				if err != nil {
 					log.Error("Failed to send whatsapp", err)
 				}
@@ -1769,6 +1777,10 @@ func sendWhatsApp(name string, msg string) {
 				&waProto.Message{
 					Conversation: proto.String(msg),
 				})
+			log.WithFields(log.Fields{
+				"msg": msg,
+				"to":  name,
+			}).Info("Sending Whatsapp")
 			if err != nil {
 				log.Error("Failed to send whatsapp", err)
 			}
