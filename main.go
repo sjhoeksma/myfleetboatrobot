@@ -37,7 +37,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var Version = "0.5.1"                   //The version of application
+var Version = "0.5.1b"                   //The version of application
 var myFleetVersion = "R1B34"            //The software version of myFleet
 var clubId = "rvs"                      //The club code
 var bookingFile = "json/booking.json"   //The json file to store bookings in
@@ -1358,7 +1358,7 @@ func bookLoop() {
 				}
 
 				//Check if have allready processed the booking, if so skip it
-				if booking.State == "Finished" || booking.State == "Comfirmed" || booking.State == "Canceled" ||
+				if booking.State == "Finished" || booking.State == "Confirmed" || booking.State == "Canceled" ||
 					booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
 					//Check if we should repeat this item
 					if booking.Repeat && booking.EpochEnd < time.Now().Unix() {
