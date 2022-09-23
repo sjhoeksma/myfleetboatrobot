@@ -34,17 +34,6 @@ Running and testing the build file can be done by
 docker run -d -p 1323:1323 -e JSONUSR=admin -e JSONPWD=admin --name=fleetrobot --restart unless-stopped 3pidev/myfleetrobot:latest
 ```
 
-# ToDo
-* WhatsApp multiple groups with ,
-* Edit of finished
-* Passing commandline vars in docker
-* Implement confirmation
-* Login by team and use this as filter of data (file by team)
-* Allways a 2 step delete --> cancel -- Canceled -- delete
-* Add planner function
-* Add Prefered boats by number of users
-
-
 # How the system finds a slot
 The system wil move the booking by finding the last option witch is bookable and then move it every 15min.
 

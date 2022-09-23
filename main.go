@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,72 +26,44 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/mdp/qrterminal"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/proto"
 
 	_ "github.com/mattn/go-sqlite3"
-	qrterminal "github.com/mdp/qrterminal"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var Version = "0.5.1"                   //The version of application
-var myFleetVersion = "R1B34"            //The software version of myFleet
-var clubId = "rvs"                      //The club code
-var bookingFile = "json/booking.json"   //The json file to store bookings in
-var boatFile = "json/boats.json"        //The json file to store boats
-var userFile = "json/users.json"        //The json file to store users
-var whatsAppFile = "json/whatsapp.json" //The json file to store whatsapp info
-var whatsAppDb = "json/whatsapp.db"     //The db file to store whatsapp sessions
-var timeZoneLoc = "Europe/Amsterdam"    //The time zone location for the club
-var timeZone = "+02:00"                 //The time zone in hour, is also calculated
-var minDuration = 60                    //The minimal duration required to book
-var maxDuration = 120                   //The maximal duration allowed to book
-var bookWindow = 48                     //The number of hours allowed to book
-var confirmTime = 10                    //Time in Min before before starting time to confirm booking, 0=Disabled
-var maxRetry int = 0                    //The maximum numbers of retry before we give up, 0=disabled
-var refreshInterval int = 1             //We do a check of the database every 1 minute
-var logLevel string = "Info"            //Default loglevel is info
-var whatsApp bool = true                //The whatsapp group to send message to
-
-//Convert boat to code
-var boatFilter = map[string]string{
-	"Alle boten": "0",
-	"1x":         "1",
-	"1x, jeugd":  "39",
-	"2-":         "2",
-	"2x":         "3",
-	"3x":         "58",
-	"4+":         "10",
-	"4-":         "9",
-	"4x":         "12",
-	"4x+/4":      "42",
-	"4x-":        "61",
-	"8+":         "13",
-	"bowa":       "65",
-	"C1x":        "15",
-	"C2+":        "16",
-	"C2x":        "17",
-	"C2x+":       "18",
-	"C4+":        "20",
-	"C4x+":       "21",
-	"C4x+/C4+":   "43",
-	"Centaur":    "68",
-	"Ergometer":  "30",
-	"Laser":      "69",
-	"Motorboat":  "61",
-	"Polyvalk":   "60",
-	"Randmeer":   "66",
-	"Ruimte":     "67",
-	"Wx1+":       "24",
-	"Wx2+":       "25",
-	"Zeilwherry": "57",
-}
+var AppVersion = "0.6.0"                      //The version of application
+var AppName = "MyFleetRobot"                  //The Application name
+var myFleetVersion = "R1B34"                  //The software version of myFleet
+var clubId = "rvs"                            //The club code
+const dbPath = "db/"                          //The location where datafiles are stored
+const bookingFile = dbPath + "booking.json"   //The json file to store bookings in
+const boatFile = dbPath + "boats.json"        //The json file to store boats
+const userFile = dbPath + "users.json"        //The json file to store users
+const whatsAppFile = dbPath + "whatsapp.json" //The json file to store whatsapp info
+const teamFile = dbPath + "teams.json"        //The json file to store group info
+const dbFile = dbPath + "myfleetrobot.db"     //The db file to store whatsapp sessions
+const versionFile = dbPath + "version.json"   //The  file to store version info
+var timeZoneLoc = "Europe/Amsterdam"          //The time zone location for the club
+var timeZone = "+02:00"                       //The time zone in hour, is also calculated
+var minDuration = 60                          //The minimal duration required to book
+var maxDuration = 120                         //The maximal duration allowed to book
+var bookWindow = 48                           //The number of hours allowed to book
+var confirmTime = 10                          //Time in Min before before starting time to confirm booking, 0=Disabled
+var maxRetry int = 0                          //The maximum numbers of retry before we give up, 0=disabled
+var refreshInterval int = 1                   //We do a check of the database every 1 minute
+var logLevel string = "Info"                  //Default loglevel is info
+var logFile string                            //Should we log to file
+var whatsApp bool = true                      //Should we enable watchapp
+var planner bool = true                       //Should we enable planner
 
 //Used to map specify when to send a whatsapp message
 var sendWhatsAppMsg = map[string]bool{
@@ -122,47 +97,82 @@ var maandFilter = map[string]string{
 	"december":  "12",
 }
 
+type RepeatType int
+
+//Repeat 0=None, 1=Daily, 2=Weekly, 3=Monthly, 4=Yearly
+const (
+	None RepeatType = iota
+	Daily
+	Weekly
+	Monthly
+	Yearly
+)
+
 //Struc used to store user info
 type UserInterface struct {
-	Username string `json:"user"`
-	Password string `json:"password"`
-	LastUsed int64  `json:"lastused"`
+	Id       int64  `db:"id" json:"id"`
+	Team     string `db:"team" json:"team"`
+	Username string `db:"user" json:"user"`
+	Password string `db:"password" json:"password"`
+	Name     string `db:"name" json:"name"`
+	LastUsed int64  `db:"lastused" json:"lastused"`
+}
+
+type LoginInterface struct {
+	Team     string `db:"team" json:"team"`
+	Password string `db:"password" json:"password"`
+	Status   string `db:"-" json:"status,omitempty"`
 }
 
 //Struc used to store user info
-type WhatsAppInterface struct {
-	To       string `json:"to"`
-	LastUsed int64  `json:"lastused"`
+type WhatsAppToInterface struct {
+	Team     string `db:"team" json:"team"`
+	To       string `db:"msgto" json:"to"`
+	LastUsed int64  `db:"lastused" json:"lastused"`
 }
 
 //Struc used to store boat and session info
 type BookingInterface struct {
-	Id          int64          `json:"id"`
-	Name        string         `json:"boat"`
-	Date        string         `json:"date"`
-	Time        string         `json:"time"`
-	Duration    int64          `json:"duration"`
-	Username    string         `json:"user"`
-	Password    string         `json:"password"`
-	Comment     string         `json:"comment"`
-	Repeat      bool           `json:"repeat,omitempty"`
-	State       string         `json:"state,omitempty"`
-	BookingId   string         `json:"bookingid,omitempty"`
-	BoatId      string         `json:"boatid,omitempty"`
-	BoatFilter  string         `json:"boatfilter,omitempty"`
-	Message     string         `json:"message,omitempty"`
-	EpochNext   int64          `json:"next,omitempty"`
-	Retry       int            `json:"retry,omitempty"`
-	UserComment bool           `json:"usercomment,omitempty"`
-	WhatsApp    string         `json:"whatsapp,omitempty"`
-	TimeZone    string         `json:"-"`
-	Cookies     []*http.Cookie `json:"-"`
-	Bookings    *[][]string    `json:"-"`
-	EpochDate   int64          `json:"-"`
-	EpochStart  int64          `json:"-"`
-	EpochEnd    int64          `json:"-"`
-	Authorized  bool           `json:"-"`
-	Changed     bool           `json:"-"`
+	Id          int64          `db:"id" json:"id"`
+	Team        string         `db:"team" json:"team"`
+	Name        string         `db:"boat" json:"boat"`
+	Date        string         `db:"date" json:"date"`
+	Time        string         `db:"time" json:"time"`
+	Duration    int64          `db:"duration" json:"duration"`
+	Username    string         `db:"user" json:"user"`
+	Password    string         `db:"password" json:"password"`
+	Comment     string         `db:"comment" json:"comment"`
+	Repeat      RepeatType     `db:"repeat" json:"repeat,omitempty"`
+	State       string         `db:"state" json:"state,omitempty"`
+	BookingId   string         `db:"bookingid" json:"bookingid,omitempty"`
+	BoatId      string         `db:"boatid" json:"boatid,omitempty"`
+	Message     string         `db:"message" json:"message,omitempty"`
+	EpochNext   int64          `db:"epochnext" json:"next,omitempty"`
+	Retry       int            `db:"retrycounter" json:"retry,omitempty"`
+	UserComment bool           `db:"usercomment" json:"usercomment"`
+	WhatsAppTo  string         `db:"whatsapp" json:"whatsapp,omitempty"`
+	TimeZone    string         `db:"-" json:"-"`
+	Cookies     []*http.Cookie `db:"-" json:"-"`
+	Bookings    *[][]string    `db:"-" json:"-"`
+	EpochDate   int64          `db:"-" json:"-"`
+	EpochStart  int64          `db:"-" json:"-"`
+	EpochEnd    int64          `db:"-" json:"-"`
+	Authorized  bool           `db:"-" json:"-"`
+	Changed     bool           `db:"-" json:"-"`
+}
+
+type TeamInterface struct {
+	Id         int64  `db:"id" json:"id"`
+	Team       string `db:"team" json:"team"`
+	Admin      bool   `db:"admin" json:"admin"`
+	Password   string `db:"password" json:"password"`
+	Title      string `db:"title" json:"title"`
+	WhatsApp   bool   `db:"whatsapp" json:"whatsapp"`
+	WhatsAppId string `db:"whatsappid" json:"whatsappid"`
+	WhatsAppTo string `db:"whatsappto" json:"whatsappto"`
+	QRCode     string `db:"-" json:"qrcode"`
+	Prefix     string `db:"prefix" json:"prefix"`
+	Planner    bool   `db:"planner" json:"planner"`
 }
 
 //The list of bookings
@@ -170,7 +180,6 @@ type BookingSlice []BookingInterface
 
 //The struct used to retreive available boats
 type BoatListInterface struct {
-	BoatFilter string
 	SunRise    int64
 	SunSet     int64
 	EpochDate  int64
@@ -179,18 +188,55 @@ type BoatListInterface struct {
 	Boats      *[][]string
 }
 
-var singleRun bool = false            //Should we do a single runonly = nowebserver
-var commentPrefix string = "MYFR:"    //The prefix we use as a comment indicator the booking is ours
-var bindAddress string = ":1323"      //The default bind port of web server
-var jsonUser string                   //The Basic Auth user of webserer
-var jsonPwd string                    //The Basic Auth password of webserver
-var jsonProtect bool                  //Should the web server use Basic Auth
-var baseUrl string                    //The base url towards the fleet.eu backend
-var guiUrl string                     //The gui url towards the fleet.eu backend
-var test string = ""                  //The test we should be running, means allways single ru
-var title string = ""                 //The title string
-var mutex *sync.Mutex = &sync.Mutex{} //The lock used where writing files
-var whatsAppClient *whatsmeow.Client  //The Whatsappclient
+//Used to store version info
+type VersionInterface struct {
+	Version string `db:"version" json:"version"`
+}
+
+type ActivityInterface struct {
+	Id        int64      `db:"id" json:"id"`
+	Team      string     `db:"team" json:"team"`
+	StartDate string     `db:"startdate" json:"startdate"`
+	EndDate   string     `db:"enddate" json:"enddate"`
+	Time      string     `db:"time" json:"time"`
+	Duration  int64      `db:"duration" json:"duration"`
+	Repeat    RepeatType `db:"repeat" json:"repeat"`
+}
+
+var singleRun bool = false                //Should we do a single runonly = nowebserver
+var commentPrefix string = "MYFR:"        //The prefix we use as a comment indicator the booking is ours
+var bindAddress string = ":1323"          //The default bind port of web server
+var jsonTeam string                       //The Basic Auth team of webserer
+var jsonPwd string                        //The Basic Auth password of webserver
+var jsonProtect bool                      //Should the web server use Basic Auth
+var baseUrl string                        //The base url towards the fleet.eu backend
+var guiUrl string                         //The gui url towards the fleet.eu backend
+var test string = ""                      //The test we should be running, means allways single ru
+var title string = ""                     //The title string
+var mutex *sync.Mutex = &sync.Mutex{}     //The lock used where writing files
+var whatsAppLog waLog.Logger              //WhatsApp logger
+var teams []TeamInterface                 //The security teams
+var db *sql.DB                            //The Database
+var whatsAppContainer *sqlstore.Container //The whatsapp datacontainer
+var dbType string = "sqlite3"             //The Database type
+
+//Simple iif function to select value
+func iif(a, b string) string {
+	if a == "" {
+		return b
+	} else {
+		return a
+	}
+}
+
+//Simple conditional if function to select value
+func cif(c bool, a, b string) string {
+	if c {
+		return a
+	} else {
+		return b
+	}
+}
 
 //Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
@@ -206,6 +252,21 @@ func MaxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+func sliceVersion(version string) [3]uint32 {
+	sa := strings.Split(version, ".")
+	var si [3]uint32
+	for j, a := range sa {
+		i, err := strconv.Atoi(a)
+		if err == nil {
+			si[j] = uint32(i)
+		}
+		if j == 2 {
+			break
+		}
+	}
+	return si
 }
 
 //Function to get an ENV variable and put it into a string
@@ -240,9 +301,49 @@ func shortTime(timeS string) string {
 	return thetime.Round(15 * time.Minute).Format("15:04")
 }
 
+//Function to filter out the valid teams from array
+func TeamFilter(arr interface{}, teamName string) interface{} {
+	contentType := reflect.TypeOf(arr)
+	contentValue := reflect.ValueOf(arr)
+	newContent := reflect.MakeSlice(contentType, 0, 0)
+	if contentValue.Len() != 0 {
+		f := 0
+		t := contentValue.Index(0).Type()
+		for ; f < t.NumField(); f++ {
+			if t.Field(f).Name == "Team" {
+				break
+			}
+		}
+		if f <= t.NumField() {
+			for i := 0; i < contentValue.Len(); i++ {
+				if content := contentValue.Index(i); content.Field(f).Interface() == teamName {
+					newContent = reflect.Append(newContent, content)
+				}
+			}
+		}
+	}
+	return newContent.Interface()
+}
+
+func Upgrade() {
+	var v VersionInterface = VersionInterface{Version: AppVersion}
+	if _, err := os.Stat(versionFile); !errors.Is(err, os.ErrNotExist) {
+		file, _ := ioutil.ReadFile(bookingFile)
+		json.Unmarshal(file, &v)
+	}
+	if v.Version != AppVersion {
+		//Add code here to do a upgrade, step by step for each version
+
+		//Upgrade finished Write the new version number
+		v.Version = AppVersion
+		json_to_file, _ := json.Marshal(v)
+		ioutil.WriteFile(versionFile, json_to_file, 0755)
+	}
+}
+
 //Read and set settings
 func Init() {
-	setEnvValue("JSONUSR", &jsonUser)
+	setEnvValue("JSONTEAM", &jsonTeam)
 	setEnvValue("JSONPWD", &jsonPwd)
 	setEnvValue("PREFIX", &commentPrefix)
 	setEnvValue("TIMEZONE", &timeZone)
@@ -251,28 +352,31 @@ func Init() {
 	setEnvValue("LOGLEVEL", &logLevel)
 	setEnvValue("TITLE", &title)
 	setEnvBoolValue("WHATSAPP", &whatsApp)
+	setEnvBoolValue("PLANNER", &planner)
 
-	version := flag.Bool("version", false, "Prints current version ("+Version+")")
+	version := flag.Bool("version", false, "Prints current version ("+AppVersion+")")
 	flag.BoolVar(&singleRun, "singleRun", singleRun, "Should we only do one run")
 	flag.StringVar(&commentPrefix, "prefix", commentPrefix, "Comment prefix")
 	flag.StringVar(&timeZoneLoc, "timezone", timeZoneLoc, "The timezone location used by user")
-	flag.IntVar(&refreshInterval, "refresh", refreshInterval, "The iterval in minutes used for refeshing")
+	flag.IntVar(&refreshInterval, "refresh", refreshInterval, "The iterval in seconds used for refeshing")
 	flag.IntVar(&bookWindow, "bookWindow", bookWindow, "The interval in hours for allowed bookings")
 	flag.IntVar(&maxRetry, "maxRetry", maxRetry, "The maximum retry's before failing, 0=disabled")
 	flag.IntVar(&confirmTime, "confirmTime", confirmTime, "The time before confirming, 0=disabled")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
-	flag.StringVar(&jsonUser, "jsonUsr", jsonUser, "The user to protect jsondata")
+	flag.StringVar(&jsonTeam, "jsonTeam", jsonTeam, "The team name to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
 	flag.StringVar(&clubId, "clubId", clubId, "The clubId used")
 	flag.StringVar(&myFleetVersion, "fleetVersion", myFleetVersion, "The version of the myFleet software to use")
 	flag.StringVar(&logLevel, "logLevel", logLevel, "The log level to use")
 	flag.StringVar(&title, "title", title, "The title to use in app")
+	flag.StringVar(&logFile, "logFile", logFile, "The logFile where we should write log information to")
 	flag.BoolVar(&whatsApp, "whatsApp", whatsApp, "Should we use WhatsApp to send a message")
+	flag.BoolVar(&planner, "planner", planner, "Should we use planner")
 	flag.StringVar(&test, "test", test, "The test action to perform")
 
 	flag.Parse() // after declaring flags we need to call it
 	if *version {
-		log.Info("Version ", Version)
+		log.Info("Version ", AppVersion)
 		os.Exit(0)
 	}
 	//When test action is specified we are allways in singlerun
@@ -281,6 +385,10 @@ func Init() {
 	}
 
 	//Setup the logging
+	if logFile != "" {
+		file, _ := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+		log.SetOutput(file)
+	}
 	level, err := log.ParseLevel(logLevel)
 	if err != nil {
 		log.SetLevel(log.InfoLevel)
@@ -291,17 +399,29 @@ func Init() {
 	//log.SetFormatter(&log.JSONFormatter{DisableColors: false, FullTimestamp: true,})
 
 	//Only enable jsonProtection if we have a username and password
-	jsonProtect = (jsonUser != "" && jsonPwd != "")
+	jsonProtect = (jsonTeam != "" && jsonPwd != "")
 	baseUrl = "https://my-fleet.eu/" + myFleetVersion + "/mobile/index0.php?&system=mobile&language=NL"
 	guiUrl = "https://my-fleet.eu/" + myFleetVersion + "/gui/index.php"
+
+	//Get the local time zone
 	loc, err := time.LoadLocation(timeZoneLoc)
 	if err != nil {
 		log.Fatal(err)
 	}
 	timeZone = time.Now().In(loc).Format("-07:00")
 
+	//Create the db path if it does not exists
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		err := os.MkdirAll(filepath.Dir(dbPath), 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	//Read the teams once, are also read on every login
+	teams = readTeamJson()
+
 	//Log the version
-	log.Info("MyFleet Robot v" + Version)
+	log.Info(AppName + " v" + AppVersion)
 }
 
 //Create from the html response a booking array
@@ -457,10 +577,6 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 func boatSearchByTime(booking *BookingInterface, starttime int64) (*BoatListInterface, error) {
 	var filter string = "0"
 	var boatList BoatListInterface
-	if booking.BoatFilter != "" {
-		filter = boatFilter[booking.BoatFilter]
-	}
-	boatList.BoatFilter = filter
 	boatList.EpochDate = booking.EpochDate
 	data := url.Values{}
 	data.Set("action", "new")
@@ -528,13 +644,14 @@ func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
 	data.Set("action", "new")
 	data.Set("exec", "make")
 	data.Set("id", booking.BoatId) //When making a boat booking we need to use the boatId
-	data.Set("typeFilter", booking.BoatFilter)
+	data.Set("typeFilter", "0")
 	data.Set("date", strconv.FormatInt(booking.EpochDate, 10))
 	data.Set("start", strconv.FormatInt(starttime, 10))
 	data.Set("end", strconv.FormatInt(endtime, 10))
 	data.Set("username", booking.Username)
 	data.Set("password", booking.Password)
-	data.Set("comment", commentPrefix+booking.Comment)
+	team, err := getTeamByName(booking.Team)
+	data.Set("comment", cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+booking.Comment)
 	request, err := http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
 	for _, o := range booking.Cookies {
 		request.AddCookie(o)
@@ -582,7 +699,8 @@ func boatCancel(booking *BookingInterface) error {
 	data.Set("id", booking.BookingId)
 	data.Set("username", booking.Username)
 	data.Set("password", booking.Password)
-	data.Set("comment", commentPrefix+booking.Comment)
+	team, err := getTeamByName(booking.Team)
+	data.Set("comment", cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+booking.Comment)
 	request, err := http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
 	for _, o := range booking.Cookies {
 		request.AddCookie(o)
@@ -611,17 +729,7 @@ func confirmBoat(booking *BookingInterface) error {
 	return nil
 }
 
-/*
-//Do a update of the boat by canceling it and booking it again
-func boatUpdate(booking *BookingInterface, starttime int64, endtime int64) error {
-	err := boatCancel(booking)
-	if err == nil {
-		err = boatBook(booking, starttime, endtime)
-	}
-	return err
-}
-*/
-
+//Update a boat booking start and end time
 func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
 	//STEP: Session
 	cookies, guiEpochStart, _, err := guiSession()
@@ -684,7 +792,8 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	data = url.Values{}
 	data.Set("newStart", strconv.FormatInt(int64((startTime-guiEpochStart)/(15*60)), 10))
 	data.Set("newEnd", strconv.FormatInt(int64((endTime-guiEpochStart)/(15*60)), 10))
-	data.Set("comment", commentPrefix+booking.Comment)
+	team, err := getTeamByName(booking.Team)
+	data.Set("comment", cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+booking.Comment)
 	data.Set("page", "3_commit")
 	data.Set("act", "Ok")
 	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Amenu", strings.NewReader(data.Encode()))
@@ -883,18 +992,12 @@ func readBoatJson() []string {
 					}
 				}
 			}
-			if _, err := os.Stat(boatFile); os.IsNotExist(err) {
-				err := os.MkdirAll(filepath.Dir(boatFile), 0644) // Create your file
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
 			json_to_file, _ := json.Marshal(b)
 			mutex.Lock()
-			err := ioutil.WriteFile(boatFile, json_to_file, 0644)
+			err := ioutil.WriteFile(boatFile, json_to_file, 0755)
 			mutex.Unlock()
 			if err != nil {
-				log.Fatal(err)
+				log.Error(err)
 			}
 			log.Info("Boat list created")
 		}
@@ -914,9 +1017,9 @@ func readBoatJson() []string {
 }
 
 //Read the  user info
-func readWhatsAppJson() []WhatsAppInterface {
-	var b []WhatsAppInterface
-	var u WhatsAppInterface = WhatsAppInterface{To: "?"}
+func readWhatsAppJson() []WhatsAppToInterface {
+	var b []WhatsAppToInterface
+	var u WhatsAppToInterface = WhatsAppToInterface{To: "?"}
 	b = append(b, u)
 	if _, err := os.Stat(whatsAppFile); errors.Is(err, os.ErrNotExist) {
 		return b
@@ -932,13 +1035,7 @@ func readWhatsAppJson() []WhatsAppInterface {
 }
 
 //Write the user info to file
-func writeWhatsAppJson(data []WhatsAppInterface) {
-	if _, err := os.Stat(whatsAppFile); os.IsNotExist(err) {
-		err := os.MkdirAll(filepath.Dir(whatsAppFile), 0644) // Create your file
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+func writeWhatsAppJson(data []WhatsAppToInterface) {
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].To == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
 			data = append(data[:i], data[i+1:]...)
@@ -946,10 +1043,38 @@ func writeWhatsAppJson(data []WhatsAppInterface) {
 	}
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
-	err := ioutil.WriteFile(whatsAppFile, json_to_file, 0644)
+	err := ioutil.WriteFile(whatsAppFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+	}
+}
+
+//Read the  group info
+func readTeamJson() []TeamInterface {
+	var b []TeamInterface
+	b = append(b, TeamInterface{Id: 0, Admin: true, Team: jsonTeam, Password: jsonPwd, Title: title, Prefix: commentPrefix, Planner: false})
+	if _, err := os.Stat(teamFile); errors.Is(err, os.ErrNotExist) {
+		return b
+	}
+	file, err := ioutil.ReadFile(teamFile)
+	if err == nil {
+		err = json.Unmarshal(file, &b)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return b
+}
+
+//Write the group info to file
+func writeTeamJson(data []TeamInterface) {
+	json_to_file, _ := json.Marshal(data)
+	mutex.Lock()
+	err := ioutil.WriteFile(teamFile, json_to_file, 0755)
+	mutex.Unlock()
+	if err != nil {
+		log.Error(err)
 	}
 }
 
@@ -973,12 +1098,6 @@ func readUsersJson() []UserInterface {
 
 //Write the user info to file
 func writeUsersJson(data []UserInterface) {
-	if _, err := os.Stat(userFile); os.IsNotExist(err) {
-		err := os.MkdirAll(filepath.Dir(userFile), 0644) // Create your file
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].Username == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
 			data = append(data[:i], data[i+1:]...)
@@ -986,7 +1105,7 @@ func writeUsersJson(data []UserInterface) {
 	}
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
-	err := ioutil.WriteFile(userFile, json_to_file, 0644)
+	err := ioutil.WriteFile(userFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
 		log.Fatal(err)
@@ -994,7 +1113,7 @@ func writeUsersJson(data []UserInterface) {
 }
 
 //Read the booking informatio
-func readJson() BookingSlice {
+func readBookingJson() BookingSlice {
 	b := BookingSlice{}
 	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
 		return b
@@ -1010,14 +1129,14 @@ func readJson() BookingSlice {
 			//We have a error try to recover the backup file
 			log.Error(err)
 			if _, err := os.Stat(bookingFile + ".bak"); errors.Is(err, os.ErrNotExist) {
-				writeJson(b)
+				writeBookingJson(b)
 			} else {
 				mutex.Lock()
 				file, _ = ioutil.ReadFile(bookingFile + ".bak")
 				mutex.Unlock()
 				err = json.Unmarshal(file, &b)
 				if err != nil {
-					writeJson(b)
+					writeBookingJson(b)
 				}
 			}
 		}
@@ -1026,13 +1145,7 @@ func readJson() BookingSlice {
 }
 
 //Write the data to the booking file, removing expired data
-func writeJson(data BookingSlice) {
-	if _, err := os.Stat(bookingFile); os.IsNotExist(err) {
-		err := os.MkdirAll(filepath.Dir(bookingFile), 0644) // Create your file
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+func writeBookingJson(data BookingSlice) {
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].State == "Delete" {
 			log.WithFields(log.Fields{
@@ -1048,7 +1161,7 @@ func writeJson(data BookingSlice) {
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
 	os.Rename(bookingFile, bookingFile+".bak")
-	err := ioutil.WriteFile(bookingFile, json_to_file, 0644)
+	err := ioutil.WriteFile(bookingFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
 		log.Fatal(err)
@@ -1064,19 +1177,28 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if strings.Contains(strings.ToLower(bb[5]), strings.ToLower(b.Name)) &&
 			bb[1] == shortDate(b.Date) {
 
+			//Check if we should cancel the boot
+			if b.State == "Cancel" {
+				err = boatCancel(b)
+				return true, err
+			}
+
 			//Convert the current start end times to Epoch
 			times := strings.Fields(bb[2]) //10:00 - 12:00
 			thetime, _ := time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[0]+":00"+b.TimeZone)
 			startTime := thetime.Unix()
 			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
 			endTime := thetime.Unix()
-
+			team, err := getTeamByName(b.Team)
 			//Check if the booking contains the commment created or specified
-			if len(bb) < 7 || !strings.EqualFold(bb[6], commentPrefix+b.Comment) {
+			if len(bb) < 7 || !strings.EqualFold(bb[6],
+				cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+b.Comment) {
 				//Check if there is a blockage
-				if ((b.EpochStart > startTime && b.EpochStart <= endTime) ||
-					(b.EpochEnd > startTime && b.EpochEnd <= endTime)) &&
-					b.State != "Blocked" {
+				if (b.EpochStart >= startTime && b.EpochStart < endTime) ||
+					(b.EpochEnd >= startTime && b.EpochEnd < endTime) {
+					if b.State == "Blocked" {
+						return false, err
+					}
 					if b.State == "Moving" {
 						log.WithFields(log.Fields{
 							"state": b.State,
@@ -1086,30 +1208,16 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 							"from":  shortTime(b.Time),
 						}).Info("Canceled because of blocked")
 						err = boatCancel(b)
-						if err != nil {
-							return true, err
-						}
-					} else {
-						b.State = "Blocked"
 					}
-					return true, errors.New("booking blocked by " + bb[3])
+					b.State = "Blocked"
+					b.Message = "booking blocked by " + bb[3]
+					return true, err
 				}
-				//log.Debug("Skip", b.Name, bb[3], bb[1], bb[2], "not the correct booking")
 				//Skip to next boat because we are not looking for this one
 				continue
 			}
 			//Boat is ours
 			b.BookingId = bb[0]
-			b.BoatFilter = bb[4]
-
-			//Check if we should cancel the boot
-			if b.State == "Cancel" {
-				err = boatCancel(b)
-				if err == nil {
-					b.State = "Canceled"
-				}
-				return true, err
-			}
 
 			//Check if we should move this boat
 			if b.EpochStart == startTime && b.EpochEnd == endTime {
@@ -1140,8 +1248,8 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 						b.State = "Finished"
 					} else {
 						b.State = "Moving"
-
 					}
+					b.Retry = 0
 				}
 				return true, err
 			}
@@ -1191,7 +1299,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
 		b.Message = "Starttime before Sunrise"
 		b.State = "Waiting"
-		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Unix()
+		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
 		return true, nil
 	}
 
@@ -1222,7 +1330,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if strings.Contains(strings.ToLower(bb[2]), strings.ToLower(b.Name)) {
 			//Book the boat id is element 0
 			b.BoatId = bb[0]
-			b.BoatFilter = boatFilter[bb[1]]
 			err := boatBook(b, starttime, endtime)
 			if err == nil {
 				loc, _ := time.LoadLocation(timeZoneLoc)
@@ -1232,37 +1339,47 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				} else {
 					b.State = "Moving"
 				}
+				b.Retry = 0
 			}
 			return err == nil, err
 		}
 	}
 
-	err = errors.New("boat not in available list")
-	if b.State != "Retry" {
-		log.WithFields(log.Fields{
-			"state":              b.State,
-			"boat":               b.Name,
-			"user":               b.Username,
-			"at":                 shortDate(b.Date),
-			"from":               shortTime(b.Time),
-			"starttime":          starttime,
-			"endtime":            endtime,
-			"boatlistSunRise":    boatList.SunRise,
-			"boatlistEpochDate":  boatList.EpochDate,
-			"boatlistEpochStart": boatList.EpochStart,
-			"boatlistEpochEnd":   boatList.EpochEnd,
-			"boats":              *boatList.Boats,
-		}).Info("Retry data")
-		b.State = "Retry"
-		b.Retry++
-		return true, err
-	}
 	// Stop Retry after the boat.EpochEnd is lager than b.EpochEnd --> Failed
 	if boatList.EpochEnd > b.EpochEnd {
 		b.State = "Failed"
+		b.Message = "Boat not bookable"
 		return true, err
 	}
-	return false, err
+
+	//Do a fast retry for 300 seconds
+	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < (boatList.SunRise + 300) {
+		b.Message = "Fast Retry"
+		b.State = "Waiting"
+		b.EpochNext = 0
+		return true, nil
+	}
+
+	//Boat not found in the list
+	log.WithFields(log.Fields{
+		"state":              b.State,
+		"boat":               b.Name,
+		"user":               b.Username,
+		"at":                 shortDate(b.Date),
+		"from":               shortTime(b.Time),
+		"starttime":          starttime,
+		"endtime":            endtime,
+		"boatlistSunRise":    boatList.SunRise,
+		"boatlistEpochDate":  boatList.EpochDate,
+		"boatlistEpochStart": boatList.EpochStart,
+		"boatlistEpochEnd":   boatList.EpochEnd,
+		"boats":              *boatList.Boats,
+	}).Info("Boat not found")
+	b.State = "Retry"
+	b.Message = "boat not found"
+	b.Retry++
+	return true, err
+
 }
 
 //The main loop in which we do all the booking processing
@@ -1272,7 +1389,7 @@ func bookLoop() {
 	//Timing loop
 	for {
 		//TODO: We should read it from file or json url
-		bookingSlice := readJson()
+		bookingSlice := readBookingJson()
 		wg := sync.WaitGroup{}
 		for i := range bookingSlice {
 			wg.Add(1)
@@ -1358,15 +1475,22 @@ func bookLoop() {
 				}
 
 				//Check if have allready processed the booking, if so skip it
-				if booking.State == "Finished" || booking.State == "Comfirmed" || booking.State == "Canceled" ||
+				if booking.State == "Finished" || booking.State == "Confirmed" || booking.State == "Canceled" ||
 					booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
 					//Check if we should repeat this item
-					if booking.Repeat && booking.EpochEnd < time.Now().Unix() {
+					if booking.Repeat != None && booking.EpochEnd < time.Now().Unix() {
 						booking.State = "Repeat"
 						booking.Message = "Booking is repeated"
 						booking.Changed = true
 						booking.BookingId = ""
-						booking.Date = time.Unix(booking.EpochStart, 0).Add(time.Duration(7*24) * time.Hour).Format("2006-01-02")
+						rs := func(c bool) int {
+							if c {
+								return 1
+							}
+							return 0
+						}
+						booking.Date = time.Unix(booking.EpochStart, 0).AddDate(rs(booking.Repeat == Yearly), rs(booking.Repeat == Monthly), rs(booking.Repeat == Daily)+(7*rs(booking.Repeat == Weekly))).Format("2006-01-02")
+
 					} else
 					//log.Println(booking.State, booking.Name, booking.Username, booking.Date, booking.Time)
 					//Check if we should mark record for removal, after 24 hours
@@ -1383,9 +1507,6 @@ func bookLoop() {
 				if !booking.UserComment {
 					booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
 				}
-
-				//The message will be rest after every run
-				booking.Message = ""
 
 				//Step 1: Login
 				err = login(booking)
@@ -1412,20 +1533,21 @@ func bookLoop() {
 		wg.Wait()
 		//Save the change to the bookingFile on changed data
 		if changed {
-			writeJson(bookingSlice)
+			writeBookingJson(bookingSlice)
 			//Check if we should send a whatsapp message
-			if whatsApp && whatsAppClient != nil && whatsAppClient.IsConnected() {
+			if whatsApp {
 				//Send a message for all bookings with same to
 				var list = map[string][]BookingInterface{}
 				for _, b := range bookingSlice {
-					if b.Changed && b.WhatsApp != "" {
-						list[b.State+":"+b.WhatsApp] = append(list[b.State+":"+b.WhatsApp], b)
+					if b.Changed && b.WhatsAppTo != "" {
+						list[b.State+":"+b.Team+"-"+b.WhatsAppTo] =
+							append(list[b.State+":"+b.Team+"-"+b.WhatsAppTo], b)
 					}
 				}
-				//Finished: Amalthea, Argus, Artemis and Lynx at 9:30 uur.
+				//Finished: booking Amalthea, Argus, Artemis and Lynx at 9:30.
 				for k, v := range list {
 					var msg string
-					var ks = strings.Split(k, ":")
+					var ks = strings.Split(k, ":") //Get the state, team-whatsappto
 					if len(v) == 1 {
 						msg = v[0].Name
 					} else {
@@ -1438,9 +1560,9 @@ func bookLoop() {
 							msg = msg + b.Name
 						}
 					}
-					msg = strings.ToLower(ks[0]) + ": " + msg + " at " + shortTime(v[0].Time) + " hour."
-					if sendWhatsAppMsg[ks[0]] {
-						sendWhatsApp(ks[1], msg)
+					msg = "Booking " + strings.ToLower(ks[0]) + " for " + msg + " at " + shortTime(v[0].Time) + " hour."
+					if sendWhatsAppMsg[ks[0]] { //Check for which states we should send message
+						sendWhatsApp(v[0].Team, v[0].WhatsAppTo, msg)
 					}
 				}
 			}
@@ -1450,8 +1572,8 @@ func bookLoop() {
 		if singleRun {
 			break
 		}
-		//We sleep before we restart, where we align as close as possible to interval, but always 3 sec for offset
-		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Minute).Round(time.Duration(refreshInterval)*time.Minute).Add(3*time.Second).Unix()-time.Now().Unix()) * time.Second)
+		//We sleep before we restart, where we align as close as possible to interval
+		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Second).Round(time.Duration(refreshInterval)*time.Second).Unix()-time.Now().Unix()) * time.Second)
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }
@@ -1496,12 +1618,49 @@ func errorHandler(err error, c echo.Context) {
 	} else {
 		report = echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	if report.Code == 401 {
+	if report.Code == 401 || report.Code == 404 {
 		makeLogEntry(c).Debug(report.Message)
 	} else {
 		makeLogEntry(c).Error(report.Message)
 	}
 	c.HTML(report.Code, report.Message.(string))
+}
+
+func getTeamByName(teamName string) (*TeamInterface, error) {
+	for _, t := range teams {
+		if t.Team == teamName {
+			return &t, nil
+		}
+	}
+	return nil, errors.New("team not found")
+}
+
+func getTeamByContext(c echo.Context) (*TeamInterface, error) {
+	var gt TeamInterface
+	auth := c.Request().Header["Authorization"]
+	if jsonProtect && len(auth) != 0 {
+		s := strings.Fields(auth[0])
+		if s[0] == "Basic" {
+			//log.Debug("Basic",  base64.StdEncoding.DecodeToString((c.Request().Header["Authorization"]))
+			k, err := base64.StdEncoding.DecodeString(s[1])
+			if err != nil {
+				return &gt, err
+			}
+			a := strings.Split(string(k), ":")
+			for i, t := range teams {
+				if t.Team == a[0] && t.Password == a[1] {
+					return &teams[i], nil
+				}
+			}
+		}
+	} else if !jsonProtect {
+		for i, t := range teams {
+			if t.Id == 0 {
+				return &teams[i], nil
+			}
+		}
+	}
+	return &gt, errors.New("invalid Authorization Header")
 }
 
 //The basic web server
@@ -1514,9 +1673,10 @@ func jsonServer() error {
 	g := e.Group("/data")
 	if jsonProtect {
 		g.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
-			//log.Debug("Basic",  base64.StdEncoding.DecodeToString((c.Request().Header["Authorization"]))
-			if username == jsonUser && password == jsonPwd {
-				return true, nil
+			for _, g := range teams {
+				if g.Team == username && g.Password == password {
+					return true, nil
+				}
 			}
 			return false, nil
 		}))
@@ -1524,21 +1684,32 @@ func jsonServer() error {
 
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOriginFunc: allowOrigin,
-		AllowMethods:    []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
+		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete,
+			http.MethodPatch},
 	}))
 
-	e.GET("/data/config", func(c echo.Context) error {
-		var versionData = map[string]interface{}{
-			"version":        Version,
+	e.GET("data/config", func(c echo.Context) error {
+		//For config we allways want to have the latest team info
+		teams = readTeamJson()
+		g, _ := getTeamByContext(c)
+		configData := map[string]interface{}{
+			"version":        AppVersion,
+			"name":           AppName,
+			"team":           g.Team,
 			"interval":       refreshInterval,
-			"prefix":         commentPrefix,
+			"prefix":         iif(g.Prefix, commentPrefix),
 			"clubid":         clubId,
+			"admin":          g.Admin,
 			"myfleetVersion": myFleetVersion,
-			"timezone":       timeZone,
-			"title":          title,
-			"whatsapp":       whatsApp && whatsAppClient != nil && whatsAppClient.IsConnected(),
+			"timezone":       timeZoneLoc,
+			"title":          iif(g.Title, iif(g.Team, title)),
+			"whatsapp":       g.WhatsApp && whatsApp,
+			"whatsappid":     g.WhatsAppId,
+			"whatsappto":     g.WhatsAppTo,
+			"authRequired":   jsonProtect,
+			"planner":        g.Planner && planner,
 		}
-		return c.JSON(http.StatusOK, versionData)
+		return c.JSON(http.StatusOK, configData)
 	})
 
 	//Protected requests
@@ -1546,46 +1717,210 @@ func jsonServer() error {
 		boats := readBoatJson()
 		return c.JSON(http.StatusOK, boats)
 	})
+
+	//Protected requests
+	g.GET("/teams", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		if team.Admin {
+			return c.JSON(http.StatusOK, teams)
+		} else {
+			return c.JSON(http.StatusOK, TeamFilter(teams, team.Team))
+		}
+	})
+
+	g.GET("/teams/:id", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		t := readTeamJson()
+		for _, tt := range t {
+			if c.Param("id") == strconv.FormatInt(tt.Id, 10) && (team.Admin || tt.Team == team.Team) {
+				return c.JSON(http.StatusOK, tt)
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.POST("/teams", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		teams = readTeamJson()
+		//Autoincrement booking id
+		var id int64 = 0
+		for _, t := range teams {
+			id = MaxInt64(id, t.Id+1)
+		}
+		new_team := new(TeamInterface)
+		err = c.Bind(new_team)
+		new_team.Id = id
+		if err != nil {
+			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+
+		teams = append(teams, *new_team)
+		writeTeamJson(teams)
+		log.WithFields(log.Fields{
+			"team":  new_team.Team,
+			"title": new_team.Title,
+		}).Info("Added team")
+
+		if team.Admin {
+			return c.JSON(http.StatusOK, teams)
+		} else {
+			return c.JSON(http.StatusOK, TeamFilter(teams, team.Team))
+		}
+	})
+
+	g.PUT("/teams/:id", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		teams = readTeamJson()
+
+		updated_team := new(TeamInterface)
+		err = c.Bind(updated_team)
+		if err != nil {
+			log.Error(err, updated_team)
+			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+		log.WithFields(log.Fields{
+			"team":  updated_team.Team,
+			"title": updated_team.Title,
+		}).Info("Updated team")
+
+		for i, t := range teams {
+			if strconv.FormatInt(t.Id, 10) == c.Param("id") && (team.Admin || t.Team == team.Team) {
+				teams = append(teams[:i], teams[i+1:]...)
+				teams = append(teams, *updated_team)
+				writeTeamJson(teams)
+				if team.Admin {
+					return c.JSON(http.StatusOK, teams)
+				} else {
+					return c.JSON(http.StatusOK, TeamFilter(teams, team.Team))
+				}
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.DELETE("/teams/:id", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		teams = readTeamJson()
+
+		for i, t := range teams {
+			if strconv.FormatInt(t.Id, 10) == c.Param("id") && (team.Admin || t.Team == team.Team) {
+				teams = append(teams[:i], teams[i+1:]...)
+				//Disconnect the whatsapp if set
+				if team.WhatsAppId != "" {
+					devices, err := whatsAppContainer.GetAllDevices()
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, err)
+					}
+					for _, dd := range devices {
+						if dd.ID.String() == team.WhatsAppId {
+							client := whatsmeow.NewClient(dd, whatsAppLog)
+							if client.Store.ID != nil {
+								client.Connect()
+								client.Logout()
+							}
+							break
+						}
+					}
+				}
+				writeTeamJson(teams)
+				//Delete all users of team
+				users := readUsersJson()
+				for i, u := range users {
+					if u.Team == team.Team {
+						users = append(users[:i], users[i+1:]...)
+					}
+				}
+				writeUsersJson(users)
+
+				//Delete all whatsappto of team
+				whatsappto := readWhatsAppJson()
+				for i, w := range whatsappto {
+					if w.Team == team.Team {
+						whatsappto = append(whatsappto[:i], whatsappto[i+1:]...)
+					}
+				}
+				writeWhatsAppJson(whatsappto)
+
+				//Delete all bookings of
+				bookings := readBookingJson()
+				for i, b := range bookings {
+					if b.Team == team.Team {
+						bookings = append(bookings[:i], bookings[i+1:]...)
+					}
+				}
+				writeBookingJson(bookings)
+
+				if team.Admin {
+					return c.JSON(http.StatusOK, teams)
+				} else {
+					return c.JSON(http.StatusOK, TeamFilter(teams, team.Team))
+				}
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
 	g.GET("/booking", func(c echo.Context) error {
-		bookings := readJson()
-		return c.JSON(http.StatusOK, bookings)
+		bookings := readBookingJson()
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		if team.Admin {
+			return c.JSON(http.StatusOK, bookings)
+		} else {
+			return c.JSON(http.StatusOK, TeamFilter(bookings, team.Team))
+		}
 	})
 
 	g.GET("/booking/:id", func(c echo.Context) error {
-		bookings := readJson()
-
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		bookings := readBookingJson()
 		for _, booking := range bookings {
-			if c.Param("id") == strconv.FormatInt(booking.Id, 10) {
+			if c.Param("id") == strconv.FormatInt(booking.Id, 10) && (team.Admin || team.Team == booking.Team) {
 				return c.JSON(http.StatusOK, booking)
 			}
 		}
 		return c.String(http.StatusNotFound, "Not found.")
 	})
 
-	g.GET("/users", func(c echo.Context) error {
-		users := readUsersJson()
-		return c.JSON(http.StatusOK, users)
-	})
-
-	g.GET("/whatsapp", func(c echo.Context) error {
-		whatsappData := readWhatsAppJson()
-		return c.JSON(http.StatusOK, whatsappData)
-	})
-
 	g.POST("/booking", func(c echo.Context) error {
-		bookings := readJson()
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		bookings := readBookingJson()
 		//Autoincrement booking id
 		var id int64 = 0
 		for _, booking := range bookings {
 			id = MaxInt64(id, booking.Id+1)
 		}
 		new_booking := new(BookingInterface)
+		err = c.Bind(new_booking)
 		new_booking.Id = id
 		new_booking.State = ""
 		new_booking.Message = ""
 		new_booking.EpochNext = 0
-		new_booking.UserComment = new_booking.Comment != ""
-		err := c.Bind(new_booking)
+		new_booking.Team = cif(team.Admin, iif(new_booking.Team, team.Team), team.Team)
+		new_booking.UserComment = strings.Trim(new_booking.Comment, " ") != ""
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Bad request.")
 		}
@@ -1597,7 +1932,7 @@ func jsonServer() error {
 		}
 
 		bookings = append(bookings, *new_booking)
-		writeJson(bookings)
+		writeBookingJson(bookings)
 		log.WithFields(log.Fields{
 			"boat": new_booking.Name,
 			"user": new_booking.Username,
@@ -1609,37 +1944,53 @@ func jsonServer() error {
 		users := readUsersJson()
 		var found bool = false
 		for i, usr := range users {
-			if strings.EqualFold(usr.Username, new_booking.Username) {
+			if strings.EqualFold(usr.Username, new_booking.Username) && usr.Team == team.Team {
 				users[i].Password = new_booking.Password
 				users[i].LastUsed = time.Now().Unix()
 				found = true
 				break
 			}
 		}
+		if !found {
+			var id int64 = 0
+			for _, t := range users {
+				id = MaxInt64(id, t.Id+1)
+			}
+			users = append(users, UserInterface{Id: id, Name: new_booking.Username, Username: new_booking.Username, Password: new_booking.Password, LastUsed: time.Now().Unix(), Team: new_booking.Team})
+		}
+		writeUsersJson(users)
 
 		//Add whatsapp to whatsapp file
 		whatsappData := readWhatsAppJson()
 		found = false
 		for i, d := range whatsappData {
-			if strings.EqualFold(d.To, new_booking.WhatsApp) {
+			if strings.EqualFold(d.To, new_booking.WhatsAppTo) && d.Team == team.Team {
 				whatsappData[i].LastUsed = time.Now().Unix()
 				found = true
 				break
 			}
 		}
 
-		if !found && new_booking.WhatsApp != "" {
-			whatsappData = append(whatsappData, WhatsAppInterface{To: new_booking.WhatsApp, LastUsed: time.Now().Unix()})
+		if !found && new_booking.WhatsAppTo != "" {
+			whatsappData = append(whatsappData, WhatsAppToInterface{To: new_booking.WhatsAppTo, LastUsed: time.Now().Unix(), Team: new_booking.Team})
 		}
 		writeWhatsAppJson(whatsappData)
-		return c.JSON(http.StatusOK, bookings)
+		if team.Admin {
+			return c.JSON(http.StatusOK, bookings)
+		} else {
+			return c.JSON(http.StatusOK, TeamFilter(bookings, team.Team))
+		}
 	})
 
 	g.PUT("/booking/:id", func(c echo.Context) error {
-		bookings := readJson()
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		bookings := readBookingJson()
 
 		updated_booking := new(BookingInterface)
-		err := c.Bind(updated_booking)
+		err = c.Bind(updated_booking)
 		if err != nil {
 			log.Error(err, updated_booking)
 			return c.String(http.StatusBadRequest, "Bad request.")
@@ -1647,6 +1998,7 @@ func jsonServer() error {
 		updated_booking.EpochNext = 0
 		updated_booking.State = ""
 		updated_booking.Message = ""
+		updated_booking.Team = cif(team.Admin, iif(updated_booking.Team, team.Team), team.Team)
 		//Round the time to the closed one
 		if strings.Contains(updated_booking.Time, "T") {
 			thetime, _ := time.Parse(time.RFC3339, updated_booking.Time)
@@ -1663,7 +2015,7 @@ func jsonServer() error {
 		users := readUsersJson()
 		var found bool = false
 		for i, usr := range users {
-			if strings.EqualFold(usr.Username, updated_booking.Username) {
+			if strings.EqualFold(usr.Username, updated_booking.Username) && usr.Team == team.Team {
 				users[i].Password = updated_booking.Password
 				users[i].LastUsed = time.Now().Unix()
 				found = true
@@ -1671,13 +2023,37 @@ func jsonServer() error {
 			}
 		}
 		if !found {
-			users = append(users, UserInterface{Username: updated_booking.Username, Password: updated_booking.Password, LastUsed: time.Now().Unix()})
+			var id int64 = 0
+			for _, t := range users {
+				id = MaxInt64(id, t.Id+1)
+			}
+			users = append(users, UserInterface{Id: id, Name: iif(updated_booking.Name, updated_booking.Username), Username: updated_booking.Username, Password: updated_booking.Password, LastUsed: time.Now().Unix(), Team: updated_booking.Team})
 		}
 		writeUsersJson(users)
 
+		//Add whatsapp to whatsapp file
+		whatsappData := readWhatsAppJson()
+		found = false
+		for i, d := range whatsappData {
+			if strings.EqualFold(d.To, updated_booking.WhatsAppTo) && d.Team == team.Team {
+				whatsappData[i].LastUsed = time.Now().Unix()
+				found = true
+				break
+			}
+		}
+
+		if !found && updated_booking.WhatsAppTo != "" {
+			whatsappData = append(whatsappData, WhatsAppToInterface{To: updated_booking.WhatsAppTo, LastUsed: time.Now().Unix(), Team: updated_booking.Team})
+		}
+		writeWhatsAppJson(whatsappData)
+
 		for i, booking := range bookings {
-			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
+			if strconv.FormatInt(booking.Id, 10) == c.Param("id") && (team.Admin || booking.Team == team.Team) {
 				bookings = append(bookings[:i], bookings[i+1:]...)
+				//Do whe have a updated using user comment
+				updated_booking.UserComment = booking.UserComment ||
+					booking.Comment != updated_booking.Comment
+
 				//Cancel a Boat when you update it, while it is finished
 				if (booking.State == "Finished" || booking.State == "Confirmed") &&
 					(shortDate(booking.Date) != shortDate(updated_booking.Date) ||
@@ -1686,22 +2062,27 @@ func jsonServer() error {
 					boatCancel(&booking)
 				}
 				bookings = append(bookings, *updated_booking)
-				writeJson(bookings)
-				return c.JSON(http.StatusOK, bookings)
+				writeBookingJson(bookings)
+				if team.Admin {
+					return c.JSON(http.StatusOK, bookings)
+				} else {
+					return c.JSON(http.StatusOK, TeamFilter(bookings, team.Team))
+				}
 			}
 		}
-
 		return c.String(http.StatusNotFound, "Not found.")
 	})
 
 	g.DELETE("/booking/:id", func(c echo.Context) error {
-		bookings := readJson()
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		bookings := readBookingJson()
 
 		for i, booking := range bookings {
-			if strconv.FormatInt(booking.Id, 10) == c.Param("id") {
-				if booking.State == "Failed" || booking.State == "Waiting" ||
-					booking.State == "" || booking.State == "Canceled" ||
-					booking.State == "Blocked" || booking.State == "Error" {
+			if strconv.FormatInt(booking.Id, 10) == c.Param("id") && (team.Admin || booking.Team == team.Team) {
+				if booking.State == "Canceled" {
 					log.WithFields(log.Fields{
 						"state": booking.State,
 						"boat":  booking.Name,
@@ -1710,17 +2091,273 @@ func jsonServer() error {
 						"from":  shortTime(booking.Time),
 					}).Info("Deleting")
 					bookings = append(bookings[:i], bookings[i+1:]...)
-					writeJson(bookings)
+					writeBookingJson(bookings)
 				} else if booking.State != "Cancel" {
 					booking.State = "Cancel"
+					booking.Message = "Canceled by user"
 					booking.EpochNext = 0
 					bookings[i] = booking
-					writeJson(bookings)
+					writeBookingJson(bookings)
 				}
-				return c.JSON(http.StatusOK, bookings)
+				if team.Admin {
+					return c.JSON(http.StatusOK, bookings)
+				} else {
+					return c.JSON(http.StatusOK, TeamFilter(bookings, team.Team))
+				}
 			}
 		}
 		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.GET("/users", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		if team.Admin {
+			return c.JSON(http.StatusOK, readUsersJson())
+		} else {
+			return c.JSON(http.StatusOK, TeamFilter(readUsersJson(), team.Team))
+		}
+	})
+
+	g.GET("/users/:id", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		u := readUsersJson()
+		for _, uu := range u {
+			if c.Param("id") == strconv.FormatInt(uu.Id, 10) && (team.Admin || uu.Team == team.Team) {
+				return c.JSON(http.StatusOK, uu)
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.POST("/users", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		u := readUsersJson()
+		//Autoincrement booking id
+		var id int64 = 0
+		for _, t := range u {
+			id = MaxInt64(id, t.Id+1)
+		}
+		new_user := new(UserInterface)
+		err = c.Bind(new_user)
+		new_user.Team = cif(team.Admin, iif(new_user.Team, team.Team), team.Team)
+		new_user.Name = iif(new_user.Name, new_user.Username)
+		new_user.Id = id
+		if err != nil {
+			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+
+		u = append(u, *new_user)
+		writeUsersJson(u)
+		log.WithFields(log.Fields{
+			"team":     new_user.Team,
+			"username": new_user.Username,
+		}).Info("Added user")
+
+		if team.Admin {
+			return c.JSON(http.StatusOK, u)
+		} else {
+			return c.JSON(http.StatusOK, TeamFilter(u, team.Team))
+		}
+	})
+
+	g.PUT("/users/:id", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		u := readUsersJson()
+
+		updated_user := new(UserInterface)
+		err = c.Bind(updated_user)
+		updated_user.Team = cif(team.Admin, iif(updated_user.Team, team.Team), team.Team)
+		if err != nil {
+			log.Error(err, updated_user)
+			return c.String(http.StatusBadRequest, "Bad request.")
+		}
+		log.WithFields(log.Fields{
+			"team":     updated_user.Team,
+			"username": updated_user.Username,
+		}).Info("Updated user")
+
+		for i, uu := range u {
+			if strconv.FormatInt(uu.Id, 10) == c.Param("id") && (team.Admin || uu.Team == team.Team) {
+				u = append(u[:i], u[i+1:]...)
+				u = append(u, *updated_user)
+				writeUsersJson(u)
+				if team.Admin {
+					return c.JSON(http.StatusOK, u)
+				} else {
+					return c.JSON(http.StatusOK, TeamFilter(u, team.Team))
+				}
+			}
+		}
+
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.DELETE("/users/:id", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		u := readUsersJson()
+
+		for i, uu := range u {
+			if strconv.FormatInt(uu.Id, 10) == c.Param("id") && (team.Admin || uu.Team == team.Team) {
+				u = append(u[:i], u[i+1:]...)
+				writeUsersJson(u)
+				if team.Admin {
+					return c.JSON(http.StatusOK, u)
+				} else {
+					return c.JSON(http.StatusOK, TeamFilter(u, team.Team))
+				}
+			}
+		}
+		return c.String(http.StatusNotFound, "Not found.")
+	})
+
+	g.GET("/whatsappto", func(c echo.Context) error {
+		team, err := getTeamByContext(c)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, err)
+		}
+		return c.JSON(http.StatusOK, TeamFilter(readWhatsAppJson(), team.Team))
+	})
+
+	//Request a new whatsapp connection for specified string
+	g.DELETE("/whatsapp", func(c echo.Context) error {
+		if !whatsApp {
+			return c.JSON(http.StatusForbidden, errors.New("WhatsApp is disabled"))
+		}
+		devices, err := whatsAppContainer.GetAllDevices()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+		//Find or create the store device
+		team, _ := getTeamByContext(c)
+		if team.WhatsAppId != "" {
+			for _, dd := range devices {
+				if dd.ID.String() == team.WhatsAppId {
+					client := whatsmeow.NewClient(dd, whatsAppLog)
+					if client.Store.ID != nil {
+						client.Connect()
+						client.Logout()
+					}
+					//Clear whatsapp info
+					team.WhatsAppId = ""
+					team.QRCode = ""
+					//TODO: Fix this
+					writeTeamJson(teams)
+					return c.JSON(http.StatusOK, "Connection deleted")
+				}
+			}
+		}
+		return c.JSON(http.StatusNotFound, "Connection not found deleted")
+	})
+
+	g.GET("/whatsapp", func(c echo.Context) error {
+		if !whatsApp {
+			return c.JSON(http.StatusForbidden, errors.New("WhatsApp is disabled"))
+		}
+		team, _ := getTeamByContext(c)
+		devices, err := whatsAppContainer.GetAllDevices()
+		if err != nil {
+			log.Debug(err)
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+		//Find or create the store device
+		var d *store.Device = nil
+
+		if team.WhatsAppId != "" {
+			for _, dd := range devices {
+				if dd.ID.String() == team.WhatsAppId {
+					d = dd
+					break
+				}
+			}
+		}
+		if d == nil {
+			d = whatsAppContainer.NewDevice()
+		}
+		c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		c.Response().WriteHeader(http.StatusOK)
+		enc := json.NewEncoder(c.Response())
+		//Check if we have a client, if so responde with
+		whatsAppClient := whatsmeow.NewClient(d, whatsAppLog)
+		if whatsAppClient.Store.ID != nil {
+			team.QRCode = ""
+			team.WhatsAppId = d.ID.String()
+			//TODO: Not the nices way to update, whe should find it
+			writeTeamJson(teams)
+			if err := enc.Encode(*team); err != nil {
+				return err
+			}
+			c.Response().Flush()
+			return nil
+		}
+		//Invalid whatsappid, so clear it
+		team.WhatsAppId = ""
+
+		qrChan, _ := whatsAppClient.GetQRChannel(context.Background())
+		err = whatsAppClient.Connect()
+		if err != nil {
+			log.Error(err)
+			return err
+		} else {
+			log.Info("New WhatsAppClient connected")
+		}
+		for evt := range qrChan {
+			if evt.Event == "code" {
+				// Render the QR code here
+				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, log.New().WriterLevel(log.InfoLevel))
+				team.QRCode = evt.Code
+				if err := enc.Encode(*team); err != nil {
+					return err
+				}
+				c.Response().Flush()
+			} else {
+				team.QRCode = ""
+				log.Info("Login event:", evt.Event)
+				if evt.Event == "success" && d.ID != nil {
+					team.WhatsAppId = d.ID.String()
+					//TODO: Not the nices way to update, whe should find it
+					writeTeamJson(teams)
+					log.WithField("WhatsAppId", team.WhatsAppId).Debug("Created whatsapp id")
+					if err := enc.Encode(*team); err != nil {
+						return err
+					}
+					c.Response().Flush()
+				}
+			}
+		}
+		//Close the connection without error
+		return nil
+
+	})
+
+	e.POST("/data/login", func(c echo.Context) error {
+		new_login := new(LoginInterface)
+		err := c.Bind(new_login)
+		new_login.Status = "Error"
+		if err == nil {
+			teams = readTeamJson()
+			for _, t := range teams {
+				if t.Team == new_login.Team && t.Password == new_login.Password {
+					new_login.Status = "ok"
+					break
+				}
+			}
+		}
+		return c.JSON(http.StatusOK, new_login)
 	})
 
 	//Serve the app
@@ -1739,22 +2376,49 @@ func (s *stdoutLogger) Infof(msg string, args ...interface{})  { log.Infof(msg, 
 func (s *stdoutLogger) Debugf(msg string, args ...interface{}) { log.Debugf(msg, args...) }
 func (s *stdoutLogger) Sub(_ string) waLog.Logger              { return s }
 
-//The event logger
-func whatsAppEventHandler(evt interface{}) {
-	switch v := evt.(type) {
-	case *events.Message:
-		log.Info("Received a message!", v.Message.GetConversation())
-	}
-}
-
 //Send a whatsapp message
-func sendWhatsApp(name string, msg string) {
-	if whatsAppClient != nil && whatsAppClient.IsConnected() {
+func sendWhatsApp(teamName string, name string, msg string) {
+	if !whatsApp {
+		log.Error("Trying to send WhatsApp message when disabled")
+		return
+	}
+	team, err := getTeamByName(teamName)
+	if err != nil {
+		log.WithField("Team", teamName).Error("Failed sending WhatsApp message to unknown team")
+		return
+	}
+	if team.WhatsAppId == "" {
+		log.WithField("Team", teamName).Error("Cannot send WhatsApp message, because team Has no WhatsAppId")
+		return
+	}
+	jid, err := types.ParseJID(team.WhatsAppId)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	device, err := whatsAppContainer.GetDevice(jid)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	client := whatsmeow.NewClient(device, whatsAppLog)
+	if client.Store.ID == nil {
+		log.Error("Client for deviceID not connected")
+		return
+	}
+	err = client.Connect()
+	if err != nil {
+		log.Error(err)
+	}
+	//Ensure we disconnect on return
+	defer client.Disconnect()
+
+	if client != nil && client.IsConnected() {
 		//Check out if whe should send message to server of user
-		groups, _ := whatsAppClient.GetJoinedGroups()
-		for _, g := range groups {
+		wgroups, _ := client.GetJoinedGroups()
+		for _, g := range wgroups {
 			if strings.EqualFold(g.GroupName.Name, name) {
-				_, err := whatsAppClient.SendMessage(context.Background(), g.JID, "",
+				_, err := client.SendMessage(context.Background(), g.JID, "",
 					&waProto.Message{
 						Conversation: proto.String(msg),
 					})
@@ -1770,7 +2434,7 @@ func sendWhatsApp(name string, msg string) {
 		}
 		//Not found send the message to name
 		if _, err := strconv.ParseInt(name, 10, 64); err == nil {
-			_, err := whatsAppClient.SendMessage(context.Background(), types.JID{
+			_, err := client.SendMessage(context.Background(), types.JID{
 				User:   name,
 				Server: types.DefaultUserServer,
 			}, "",
@@ -1790,67 +2454,37 @@ func sendWhatsApp(name string, msg string) {
 	}
 }
 
-//The whatsAppServer
-func whatsAppServer() {
-	log.Info("Start WhatsApp")
-	var clientLog waLog.Logger = &stdoutLogger{}
-	container, err := sqlstore.New("sqlite3", "file:"+whatsAppDb+"?_foreign_keys=on", clientLog)
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	// If you want multiple sessions, remember their JIDs and use .GetDevice(jid) or .GetAllDevices() instead.
-	deviceStore, err := container.GetFirstDevice()
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	whatsAppClient = whatsmeow.NewClient(deviceStore, clientLog)
-	whatsAppClient.AddEventHandler(whatsAppEventHandler)
-
-	if whatsAppClient.Store.ID == nil {
-		// No ID stored, new login
-		qrChan, _ := whatsAppClient.GetQRChannel(context.Background())
-		err = whatsAppClient.Connect()
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		for evt := range qrChan {
-			if evt.Event == "code" {
-				// Render the QR code here
-				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, log.New().WriterLevel(log.InfoLevel))
-			} else {
-				log.Info("Login event:", evt.Event)
-			}
-		}
-	} else {
-		// Already logged in, just connect
-		err = whatsAppClient.Connect()
-		if err != nil {
-			log.Error(err)
-		}
-	}
-}
-
 func main() {
+	var err error
+	Init()
+	db, err = sql.Open(dbType, "file:"+dbFile+"?_foreign_keys=on")
+	if err != nil {
+		log.Fatalf("failed to open database: %w", err)
+	}
+	//Create whatsAppContainer
+	if whatsApp {
+		store.SetOSInfo(AppName, sliceVersion(AppVersion))
+		var clientLog waLog.Logger = &stdoutLogger{}
+		whatsAppContainer = sqlstore.NewWithDB(db, dbType, clientLog)
+		err = whatsAppContainer.Upgrade()
+		if err != nil {
+			log.Fatalf("failed to upgrade database: %w", err)
+		}
+		log.Info("WhatsApp enabled")
+	}
+	//Catch shutdown
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-c
 		log.Info("Waiting for clean Exit")
-		if whatsAppClient != nil {
-			whatsAppClient.Disconnect()
-		}
 		mutex.Lock()
+		db.Close()
 		os.Exit(0)
 	}()
-	Init()
+
 	if !singleRun {
 		go bookLoop()
-		if whatsApp {
-			go whatsAppServer()
-		}
 		err := jsonServer()
 		if err != nil {
 			log.Fatal(err)
@@ -1864,10 +2498,6 @@ func main() {
 		case "boatlist":
 			os.Remove(boatFile)
 			log.Info("BoatList", readBoatJson())
-		case "whatsapp":
-			whatsAppServer()
-			sendWhatsApp("MyFleet Robot", "Robot Test Message")
-			whatsAppClient.Disconnect()
 		default:
 			bookLoop()
 		}

@@ -1,6 +1,17 @@
-.app {
+.App {
     margin: 0.5rem auto;
     width: 99vw;
+}
+
+.Failure {
+    margin: 0 auto;
+    padding: 10px;
+    width: (99vw - 10px);
+    background-color: red;
+    color: white;
+    text-align: center;
+    font-weight: bold;
+    border-radius: 4px;
 }
 
 .MuiTypography-h6{
@@ -9,7 +20,8 @@
 }
 
 .MTableToolbar-title-9{
-    min-width: 30px
+    padding-left: 15px;
+    min-width: 40px
 }
 
 .TableToolbar-icon {
@@ -27,8 +39,296 @@
 }
 
 
+.Auth-form-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100vw;
+    height: 100vh;
+}
+
+.Auth-button-container {
+    display: flex;
+    justify-content: center;
+}
+
+.Auth-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px;
+}
+
+.Auth-input-container label {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgb(34, 34, 34);
+  }
+
+.Auth-input-container input[type="text"], .Auth-input-container input[type="password"] {
+    height: 25px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.Auth-button-container input[type="submit"] {
+    margin-top: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    background: #0115a8;
+    border: 1px solid  #0115a8;
+    color: #fff;
+    padding: 10px 20px;
+}
+
+.Auth-button-container input[type="submit"]:hover {
+    background: #368bf3f0;
+}
+
+.Auth-error {
+    color: red;
+    font-size: 12px;
+}
+
+.Auth-form {
+    width: 420px;
+    box-shadow: rgb(0 0 0 / 16%) 1px 1px 10px;
+    padding-top: 30px;
+    padding-bottom: 20px;
+    border-radius: 8px;
+    background-color: white;
+}
+
+.Auth-form-content {
+    padding-left: 12%;
+    padding-right: 12%;
+}
+
+.Auth-form-title {
+    text-align: center;
+    margin-bottom: 1em;
+    font-size: 24px;
+    color: rgb(34, 34, 34);
+    font-weight: 800;
+}
+
+.Auth-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.WhatsApp {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 1px solid #ccc;
+    background: #fff;
+    overflow: auto;
+    border-radius: 4px;
+    outline: none;
+    padding: 20px;
+}
+
+.WhatsApp button {
+    margin-top: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    background: #0115a8;
+    border: 1px solid  #0115a8;
+    color: #fff;
+    padding: 10px 20px;
+}
+
+.WhatsApp button:hover {
+    background: #368bf3f0;
+}
+  
+.WhatsApp-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background-color: rgba(0, 0, 0, 0.75);
+}
+  
+.ReactModal__Overlay {
+    opacity: 0;
+    transition: opacity 500ms ease-in-out;
+}
+
+.ReactModal__Overlay--after-open {
+    opacity: 1;
+}
+
+.ReactModal__Overlay--before-close {
+    opacity: 0;
+}
+
 @media only screen and (max-width: 480px) {
     .MuiTypography-h6 {
         display: none;
     }
 }
+
+.MenuContainer {
+    position: fixed !important;
+    background-color:white;
+    z-index: 2;
+    left: 8px;
+    top: 15px;
+}
+
+.MenuContainer h2 {
+    margin-bottom: 10px;
+}
+
+.Overlay {
+  z-index: 19 !important;
+}
+
+.Menu {
+  z-index: 20 !important;
+  width: 170px !important;
+  border: none;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 8px;
+
+}
+
+.MenuElementBottom {
+  position: absolute !important;
+  bottom: 0 !important;
+  width: 145px !important;
+}
+
+.MenuElementTitle{
+  background-color: #0115a8;
+  margin-left : 0px !important;
+  color: white;
+  text-align: center;
+}
+
+.Menu ul{
+  margin: 0;
+  padding: 0;
+}
+
+
+.Menu li {
+  border-bottom: 1px solid #efefef;
+  display: block;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 1em;
+  font-weight: 700;
+  margin-left: 8px;
+  padding: 18px 18px 18px 0px;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: background 200ms ease-in-out;
+}
+
+.Menu li:hover {
+  color:#368bf3f0;
+}
+
+.Menu svg {
+float: right;
+}
+
+.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100vw;
+    height: 100vh;
+}
+
+.lds-roller {
+    display: inline-block;
+    position: relative;
+    width: 80px;
+    height: 80px;
+  }
+  .lds-roller div {
+    animation: lds-roller 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    transform-origin: 40px 40px;
+  }
+  .lds-roller div:after {
+    content: " ";
+    display: block;
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #fff;
+    margin: -4px 0 0 -4px;
+  }
+  .lds-roller div:nth-child(1) {
+    animation-delay: -0.036s;
+  }
+  .lds-roller div:nth-child(1):after {
+    top: 63px;
+    left: 63px;
+  }
+  .lds-roller div:nth-child(2) {
+    animation-delay: -0.072s;
+  }
+  .lds-roller div:nth-child(2):after {
+    top: 68px;
+    left: 56px;
+  }
+  .lds-roller div:nth-child(3) {
+    animation-delay: -0.108s;
+  }
+  .lds-roller div:nth-child(3):after {
+    top: 71px;
+    left: 48px;
+  }
+  .lds-roller div:nth-child(4) {
+    animation-delay: -0.144s;
+  }
+  .lds-roller div:nth-child(4):after {
+    top: 72px;
+    left: 40px;
+  }
+  .lds-roller div:nth-child(5) {
+    animation-delay: -0.18s;
+  }
+  .lds-roller div:nth-child(5):after {
+    top: 71px;
+    left: 32px;
+  }
+  .lds-roller div:nth-child(6) {
+    animation-delay: -0.216s;
+  }
+  .lds-roller div:nth-child(6):after {
+    top: 68px;
+    left: 24px;
+  }
+  .lds-roller div:nth-child(7) {
+    animation-delay: -0.252s;
+  }
+  .lds-roller div:nth-child(7):after {
+    top: 63px;
+    left: 17px;
+  }
+  .lds-roller div:nth-child(8) {
+    animation-delay: -0.288s;
+  }
+  .lds-roller div:nth-child(8):after {
+    top: 56px;
+    left: 12px;
+  }
+  @keyframes lds-roller {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+  
