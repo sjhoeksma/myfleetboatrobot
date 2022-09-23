@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add failure indication or message
 - Startup spinner
 - Prefix is defined by team
+- Added date to whatsapp message
 
 ### Changed
 - When blocking, state is not changed to error

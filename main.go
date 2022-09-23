@@ -40,7 +40,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.6.0"                      //The version of application
+var AppVersion = "0.6.1"                      //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -1560,7 +1560,7 @@ func bookLoop() {
 							msg = msg + b.Name
 						}
 					}
-					msg = "Booking " + strings.ToLower(ks[0]) + " for " + msg + " at " + shortTime(v[0].Time) + " hour."
+					msg = "Booking " + strings.ToLower(ks[0]) + " for " + msg + " at " + shortDate(v[0].Date) + " " + shortTime(v[0].Time) + " hour."
 					if sendWhatsAppMsg[ks[0]] { //Check for which states we should send message
 						sendWhatsApp(v[0].Team, v[0].WhatsAppTo, msg)
 					}
