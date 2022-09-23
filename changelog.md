@@ -14,7 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add PlanLogic
 - Change booking using the user dropdown instead of username password
 
-## [Unreleased]
+## [Development]
+### Added
+### Changed
+### Removed
+
+## [0.6.1]
 ### Added
 - Support for Multiple usergroups, settings comment header, title and password
 - Release notes
@@ -43,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - User is added on new_booking
 - jsonUsr commandline changed tot jsonTeam
 - Repeat is now based on None,Daily,Weekly,Monthly,Yearly
+- Loop interval to seconds + retry stated added
+- Fix the start time is calculated for one hour instead of duration
 
 ### Removed
 - Single whatsapp connection

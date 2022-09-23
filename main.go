@@ -1232,7 +1232,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			}
 
 			newEndTime := MinInt64(boatList.EpochEnd, b.EpochEnd)
-			newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-b.Duration*60))
+			newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-int64(minDuration)*60))
 			newStartTime = MaxInt64(newStartTime, boatList.SunRise)
 			//log.Debug("Epoch", startTime, newStartTime, endTime, newEndTime, b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet, bb)
 
@@ -1305,7 +1305,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Calculate the minimal start and end time
 	endtime := MinInt64(boatList.EpochEnd, b.EpochEnd)
-	starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-b.Duration*60))
+	starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
 	starttime = MaxInt64(starttime, boatList.SunRise)
 
 	//Check if we are allowed to book this
