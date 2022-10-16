@@ -13,11 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add Planner Team - Planner Dates base on flag planner
 - Add PlanLogic
 - Change booking using the user dropdown instead of username password
+- Add Fallback, table by Prio,...BootType and then by type the boat in Row
 
 ## [Development]
 ### Added
 ### Changed
 ### Removed
+
+## [0.6.2]
+### Added
+- AddTime option by team
 
 ## [0.6.1]
 ### Added

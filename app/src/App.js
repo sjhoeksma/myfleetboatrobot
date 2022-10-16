@@ -67,6 +67,7 @@ export default function App() {
     },
     {title: 'Title', field: 'title'},
     {title: 'Prefix', field: 'prefix'},
+    {title: 'AddTime', field: 'addtime',type: "boolean"},
     {title: 'Planner', field: 'planner', type: "boolean"},
     {title: 'WhatsApp', field: 'whatsapp',type: "boolean"},
     {title: 'WhatsApp To', field: 'whatsappto', editComponent: props => (

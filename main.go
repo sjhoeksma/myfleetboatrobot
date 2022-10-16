@@ -40,7 +40,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.6.1"                      //The version of application
+var AppVersion = "0.6.2"                      //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -167,6 +167,7 @@ type TeamInterface struct {
 	Admin      bool   `db:"admin" json:"admin"`
 	Password   string `db:"password" json:"password"`
 	Title      string `db:"title" json:"title"`
+	AddTime    bool   `db:"addtime" json:"addtime"`
 	WhatsApp   bool   `db:"whatsapp" json:"whatsapp"`
 	WhatsAppId string `db:"whatsappid" json:"whatsappid"`
 	WhatsAppTo string `db:"whatsappto" json:"whatsappto"`
@@ -678,7 +679,6 @@ func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
 	// Find the sunrise, sunset, min and max times allowed
 	doc.Find("input").Each(func(base int, baseinput *goquery.Selection) {
 		val, exists := baseinput.Attr("value")
-		//TODO: Read the response and set bookingId
 		if exists && val == "iCal afspraak" {
 			link, _ := baseinput.Attr("onclick")
 			nr := re.FindStringSubmatch(link)
@@ -812,6 +812,24 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
 		return errors.New("HTTP Status is out of the 2xx range")
 	}
+	/* TODO: Error handling
+	b, _ := io.ReadAll(response.Body)
+	booking.BookingId = ""
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(string(b)))
+	re := regexp.MustCompile(`.*?rid=([0-9]+).*;$`)
+	// Find the sunrise, sunset, min and max times allowed
+	doc.Find("input").Each(func(base int, baseinput *goquery.Selection) {
+		val, exists := baseinput.Attr("value")
+		if exists && val == "iCal afspraak" {
+			link, _ := baseinput.Attr("onclick")
+			nr := re.FindStringSubmatch(link)
+			booking.BookingId = nr[1]
+		}
+	})
+	if booking.BookingId == "" {
+		return errors.New("booking number could not befound")
+	}
+	*/
 	return nil
 }
 
@@ -1341,7 +1359,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 				b.Retry = 0
 			}
-			return err == nil, err
+			return true, err
 		}
 	}
 
@@ -1352,8 +1370,8 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		return true, err
 	}
 
-	//Do a fast retry for 300 seconds
-	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < (boatList.SunRise + 300) {
+	//Do a fast retry for 60 seconds
+	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < (boatList.SunRise + 60) {
 		b.Message = "Fast Retry"
 		b.State = "Waiting"
 		b.EpochNext = 0
@@ -1504,7 +1522,8 @@ func bookLoop() {
 				}
 
 				//Check if comment is set, if not fill default
-				if !booking.UserComment {
+				team, err := getTeamByName(booking.Team)
+				if !booking.UserComment && team.AddTime {
 					booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
 				}
 
