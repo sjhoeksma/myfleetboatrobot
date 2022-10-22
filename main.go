@@ -1207,10 +1207,8 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			startTime := thetime.Unix()
 			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
 			endTime := thetime.Unix()
-			team, err := getTeamByName(b.Team)
-			//Check if the booking contains the commment created or specified
-			if len(bb) < 7 || !strings.EqualFold(bb[6],
-				cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+b.Comment) {
+			//Check if the booking contains the booking id we created
+			if len(bb) < 7 || b.BookingId != bb[0] {
 				//Check if there is a blockage
 				if (b.EpochStart >= startTime && b.EpochStart < endTime) ||
 					(b.EpochEnd >= startTime && b.EpochEnd < endTime) {
@@ -1229,6 +1227,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					}
 					b.State = "Blocked"
 					b.Message = "booking blocked by " + bb[3]
+					b.BookingId = ""
 					return true, err
 				}
 				//Skip to next boat because we are not looking for this one
