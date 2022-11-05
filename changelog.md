@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add PlanLogic
 - Change booking using the user dropdown instead of username password
 - Add Fallback, table by Prio,...BootType and then by type the boat in Row
+- Fixtime zone during winter/summer
 
 ## [Development]
 ### Added

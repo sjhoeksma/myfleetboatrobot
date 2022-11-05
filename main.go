@@ -40,7 +40,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.6.2"                      //The version of application
+var AppVersion = "0.6.2b"                     //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -410,6 +410,8 @@ func Init() {
 		log.Fatal(err)
 	}
 	timeZone = time.Now().In(loc).Format("-07:00")
+	//Log the version
+	log.Info("TimeZone: " + timeZone)
 
 	//Create the db path if it does not exists
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
