@@ -1404,6 +1404,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 	b.State = "Retry"
 	b.Message = "boat not found"
 	b.Retry++
+	b.EpochNext = time.Now().Unix() + (10 * int64(b.Retry)) // Retry in 10 Seconds mutliplied by the retry's
 	return true, err
 
 }
