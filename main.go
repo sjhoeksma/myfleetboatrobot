@@ -40,7 +40,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.6.2b"                     //The version of application
+var AppVersion = "0.6.3"                      //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -342,6 +342,19 @@ func Upgrade() {
 	}
 }
 
+func updateTimeZone() {
+	//Get the local time zone
+	loc, err := time.LoadLocation(timeZoneLoc)
+	if err != nil {
+		log.Fatal(err)
+	}
+	tz := time.Now().In(loc).Format("-07:00")
+	if tz != timeZone {
+		log.Info("TimeZone: " + timeZone)
+		timeZone = tz
+	}
+}
+
 //Read and set settings
 func Init() {
 	setEnvValue("JSONTEAM", &jsonTeam)
@@ -405,13 +418,7 @@ func Init() {
 	guiUrl = "https://my-fleet.eu/" + myFleetVersion + "/gui/index.php"
 
 	//Get the local time zone
-	loc, err := time.LoadLocation(timeZoneLoc)
-	if err != nil {
-		log.Fatal(err)
-	}
-	timeZone = time.Now().In(loc).Format("-07:00")
-	//Log the version
-	log.Info("TimeZone: " + timeZone)
+	updateTimeZone()
 
 	//Create the db path if it does not exists
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -493,13 +500,13 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 			val, exists := baseselect.Attr("src")
 			//SunRise -15min truncated at 15min mark
 			if exists && val == "css/solopp.gif" {
-				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "-")[0]+":00"+booking.TimeZone)
+				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "-")[0]+":00"+timeZone)
 				boatList.SunRise = thetime.Add(-time.Minute * 15).Truncate(15 * time.Minute).Unix()
 				//boatList.SunRise = thetime.Add(-time.Minute * 15).Round(15 * time.Minute).Unix()
 			}
 			//SunSet +15 min
 			if exists && val == "css/solned.gif" {
-				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "+")[0]+":00"+booking.TimeZone)
+				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "+")[0]+":00"+timeZone)
 				boatList.SunSet = thetime.Add(time.Minute * 15).Round(15 * time.Minute).Unix()
 			}
 		})
@@ -525,7 +532,7 @@ func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *s
 				})
 				baseselect.Find("optgroup").Each(func(baseop int, baseoption *goquery.Selection) {
 					val2, _ := baseoption.Attr("label")
-					thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+val2+":00"+booking.TimeZone)
+					thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+val2+":00"+timeZone)
 					ee := thetime.Unix()
 					ee += int64(minDuration) * 60 //Add the minimal book time
 					boatList.EpochEnd = MaxInt64(ee, boatList.EpochEnd)
@@ -1592,6 +1599,8 @@ func bookLoop() {
 		if singleRun {
 			break
 		}
+		//Get the local time zone
+		updateTimeZone()
 		//We sleep before we restart, where we align as close as possible to interval
 		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Second).Round(time.Duration(refreshInterval)*time.Second).Unix()-time.Now().Unix()) * time.Second)
 		//log.Println("Awake from Sleep", refreshInterval)
@@ -2258,12 +2267,16 @@ func jsonServer() error {
 		if !whatsApp {
 			return c.JSON(http.StatusForbidden, errors.New("WhatsApp is disabled"))
 		}
-		devices, err := whatsAppContainer.GetAllDevices()
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, err)
-		}
 		//Find or create the store device
 		team, _ := getTeamByContext(c)
+		devices, err := whatsAppContainer.GetAllDevices()
+		if err != nil {
+			team.WhatsAppId = ""
+			team.QRCode = ""
+			writeTeamJson(teams)
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+
 		if team.WhatsAppId != "" {
 			for _, dd := range devices {
 				if dd.ID.String() == team.WhatsAppId {
@@ -2479,7 +2492,7 @@ func main() {
 	Init()
 	db, err = sql.Open(dbType, "file:"+dbFile+"?_foreign_keys=on")
 	if err != nil {
-		log.Fatalf("failed to open database: %w", err)
+		log.Fatal(err)
 	}
 	//Create whatsAppContainer
 	if whatsApp {
@@ -2488,7 +2501,7 @@ func main() {
 		whatsAppContainer = sqlstore.NewWithDB(db, dbType, clientLog)
 		err = whatsAppContainer.Upgrade()
 		if err != nil {
-			log.Fatalf("failed to upgrade database: %w", err)
+			log.Fatal(err)
 		}
 		log.Info("WhatsApp enabled")
 	}

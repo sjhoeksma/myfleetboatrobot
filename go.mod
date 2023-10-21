@@ -22,7 +22,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.1 // indirect
 	go.mau.fi/libsignal v0.0.0-20220628090436-4d18b66b087e // indirect
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
-	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
@@ -37,7 +37,7 @@ require (
 	github.com/labstack/echo/v4 v4.7.2
 	github.com/mattn/go-sqlite3 v1.14.15
 	github.com/mdp/qrterminal v1.0.1
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.3
 	go.mau.fi/whatsmeow v0.0.0-20220811191500-f650c10b0068
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 )
