@@ -2451,7 +2451,7 @@ func sendWhatsApp(teamName string, name string, msg string) {
 		wgroups, _ := client.GetJoinedGroups()
 		for _, g := range wgroups {
 			if strings.EqualFold(g.GroupName.Name, name) {
-				_, err := client.SendMessage(context.Background(), g.JID, "",
+				_, err := client.SendMessage(context.Background(), g.JID,
 					&waProto.Message{
 						Conversation: proto.String(msg),
 					})
@@ -2470,10 +2470,9 @@ func sendWhatsApp(teamName string, name string, msg string) {
 			_, err := client.SendMessage(context.Background(), types.JID{
 				User:   name,
 				Server: types.DefaultUserServer,
-			}, "",
-				&waProto.Message{
-					Conversation: proto.String(msg),
-				})
+			}, &waProto.Message{
+				Conversation: proto.String(msg),
+			})
 			log.WithFields(log.Fields{
 				"msg": msg,
 				"to":  name,
