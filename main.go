@@ -40,7 +40,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.6.3"                      //The version of application
+var AppVersion = "0.6.4"                      //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -57,8 +57,8 @@ var timeZone = "+02:00"                       //The time zone in hour, is also c
 var minDuration = 60                          //The minimal duration required to book
 var maxDuration = 120                         //The maximal duration allowed to book
 var bookWindow = 48                           //The number of hours allowed to book
-var confirmTime = 10                          //Time in Min before before starting time to confirm booking, 0=Disabled
-var maxRetry int = 0                          //The maximum numbers of retry before we give up, 0=disabled
+var confirmTime = 0                           //Time in Min before before starting time to confirm booking, 0=Disabled
+var maxRetry int = 100                        //The maximum numbers of retry before we give up, 0=disabled
 var refreshInterval int = 1                   //We do a check of the database every 1 minute
 var logLevel string = "Info"                  //Default loglevel is info
 var logFile string                            //Should we log to file
