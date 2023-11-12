@@ -270,7 +270,7 @@ export default function App() {
         />)
     },
     { title: 'Repeat', field: 'repeat', sorting: false, initialEditValue: 0, type: 'numeric',  lookup: RepeatLookup },
-    { title: 'Message', field: 'message', editable: 'never', sorting: false },
+    { title: 'Message', field: 'message', editable: 'never', sorting: false},
     { title: 'UserComment', field: 'usercomment', type: 'boolean', hidden: true },
     { title: 'Id', field: 'id', hidden: true },
   ]
@@ -958,6 +958,13 @@ export default function App() {
     </div>
   )
 
+  const formatLog = (l) => (
+    <div>
+    <div>{l.date} </div>
+    <div>{l.log} </div>
+    </div>
+  )
+
   const renderBoat = (
     <div> 
       <Modal
@@ -997,11 +1004,30 @@ export default function App() {
           <button onClick={toggleWhatsAppOpen}>Close</button>
         </div>
       </Modal>
-      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30 * 1000} onIdle={onIdle} onActive={onActive} />
+      <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30 * 1000} onIdle={onIdle} onActive={onActive} />    
       <MaterialTable
         title={<div className="MTableToolbar-title-9"><img className="TableToolbar-icon" src="favicon.ico" alt=""></img><h6 className="MuiTypography-root MuiTypography-h6" style={{ "whiteSpace": "nowrap", "overflow": "hidden", "textOverflow": "ellipsis" }}>&nbsp;{appconfig && appconfig.title ? appconfig.title : "MyFleet Robot"}</h6></div>}
         columns={columns}
         data={booking}
+         // other props
+         detailPanel={rowData => {
+          var out =""
+          if (rowData.logs) {
+            rowData.logs.forEach((l)=>{out += "<div>"+(new Date(l.date * 1000)).toISOString()+" - " + l.log+"</div>" })
+          }
+          return (
+            <div
+            style={{
+              fontSize: 14,
+              textAlign: 'left',
+              color: 'white',
+              backgroundColor: '#505050',
+            }}
+          >
+            {<div dangerouslySetInnerHTML={{ __html: out }} />}
+          </div>
+          )
+        }}
         options={{
           headerStyle: { borderBottomColor: 'red', borderBottomWidth: '3px', fontFamily: 'verdana' },
           actionsColumnIndex: -1,

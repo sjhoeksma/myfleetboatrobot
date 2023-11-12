@@ -39,7 +39,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.7.0-pre"                  //The version of application
+var AppVersion = "0.7.0"                      //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -181,6 +181,12 @@ type BoatElementStruct struct {
 }
 type BoatListStruct []BoatElementStruct
 
+type LogStruct struct {
+	Date int64  `json:"date"` // Date
+	Log  string `json:"log"`  //Log
+}
+type LogListStruct []LogStruct
+
 //Struc used to store boat and session info
 type BookingInterface struct {
 	Id            int64           `db:"id" json:"id"`
@@ -202,7 +208,7 @@ type BookingInterface struct {
 	Retry         int             `db:"retrycounter" json:"retry,omitempty"`
 	UserComment   bool            `db:"usercomment" json:"usercomment"`
 	WhatsAppTo    string          `db:"whatsapp" json:"whatsapp,omitempty"`
-	Logs          []string        `db:"logs" json:"logs,omitempty"`
+	Logs          LogListStruct   `db:"logs" json:"logs,omitempty"`
 	TimeZone      string          `db:"-" json:"-"`
 	Boats         *BoatListStruct `db:"-" json:"-"`
 	GuiEpochStart int64           `db:"-" json:"-"`
@@ -227,7 +233,6 @@ var jsonProtect bool                      //Should the web server use Basic Auth
 var textUrl string                        //Default backend url
 var guiUrl string                         //The gui url towards the fleet.eu backend
 var authUrl string                        //Backend url towards authentication
-var mobileUrl string                      //The mobile backend
 var test string = ""                      //The test we should be running, means allways single ru
 var title string = ""                     //The title string
 var mutex *sync.Mutex = &sync.Mutex{}     //The lock used where writing files
@@ -433,7 +438,6 @@ func Init() {
 	guiUrl = "https://my-fleet.eu/" + myFleetVersion + "/gui/index.php"
 	textUrl = "https://my-fleet.eu/" + myFleetVersion + "/text/index.php"
 	authUrl = "https://my-fleet.eu/" + myFleetVersion + "/text/authenticate.php"
-	mobileUrl = "https://my-fleet.eu/" + myFleetVersion + "/mobile/index0.php?&system=mobile&language=NL"
 
 	//Get the local time zone
 	updateTimeZone()
@@ -1498,7 +1502,7 @@ func bookLoop() {
 
 				//Step 5: On Changed append the message to the log
 				if booking.Changed {
-					booking.Logs = append(booking.Logs, booking.Message)
+					booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: booking.Message})
 				}
 
 			}(&bookingSlice[i], &changed, &wg)
@@ -1899,6 +1903,8 @@ func jsonServer() error {
 		new_booking.EpochNext = 0
 		new_booking.Team = cif(team.Admin, iif(new_booking.Team, team.Team), team.Team)
 		new_booking.UserComment = strings.Trim(new_booking.Comment, " ") != ""
+		new_booking.Logs = append(new_booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Created by GUI"})
+
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Bad request.")
 		}
@@ -2031,6 +2037,7 @@ func jsonServer() error {
 				//Do whe have a updated using user comment
 				updated_booking.UserComment = booking.UserComment ||
 					booking.Comment != updated_booking.Comment
+				updated_booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Update by GUI"})
 
 				//Cancel a Boat when you update it, while it is finished
 				if (booking.State == "Finished" || booking.State == "Confirmed") &&
@@ -2074,6 +2081,8 @@ func jsonServer() error {
 					booking.State = "Cancel"
 					booking.Message = "Canceled by user"
 					booking.EpochNext = 0
+					booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Canceled by GUI"})
+
 					bookings[i] = booking
 					writeBookingJson(bookings)
 				}
