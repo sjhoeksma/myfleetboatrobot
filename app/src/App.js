@@ -141,6 +141,26 @@ export default function App() {
           onInputChange={e => { if (e) props.onChange(e.target.value) }}
         />)
     },
+    {
+      title: 'Fallback', field: 'fallback', editable: 'onAdd',
+      editComponent: props => (
+        <Autocomplete
+          freeSolo
+          id="boats"
+          options={boats}
+          value={props.value}
+          renderInput={params => {
+            return (
+              <TextField
+                {...params}
+                fullWidth
+              />
+            );
+          }}
+          onChange={e => { if (e) props.onChange(e.target.innerText) }}
+          onInputChange={e => { if (e) props.onChange(e.target.value) }}
+        />)
+    },
     { title: 'Date', field: 'date', type: 'date', defaultSort: 'desc' },
     {
       title: 'Time', field: 'time', sorting: false,
@@ -448,11 +468,8 @@ export default function App() {
       errorList.push("Try Again, You didn't enter the Password field")
     }
     if (!('team' in newData) || newData.team === "" || newData.team== null) {
-      errorList.push("Try Again, You didn't enter the Temm field")
+      errorList.push("Try Again, You didn't enter the Team field")
     } 
-    if (!('prefix' in newData) || newData.prefix === "" || newData.prefix === null) {
-      errorList.push("Try Again, You didn't enter the prefix field")
-    }
     if (!('title' in newData) || newData.title === "" || newData.title === null) {
       errorList.push("Try Again, You didn't enter the title field")
     }
@@ -1039,13 +1056,14 @@ export default function App() {
     </div>
   )
 
+ 
   return (
     (!appconfig.version) ? 
      <div id="app" className="App" >
        <ActivityDetector activityEvents={customActivityEvents} enabled={true} timeout={30 * 1000} onIdle={refreshAppConfig} onActive={refreshAppConfig} />
       <div className="loading"><div className="lds-roller"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div>
      </div> :
-    (appconfig && !appconfig.authRequired) || !('auth' in header) ? renderLogin :
+    (appconfig && appconfig.authRequired) && !('auth' in header) ? renderLogin :
       <div id="app" className="App" >
       {renderFailure}
       <StyledOffCanvas position = 'left' isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} >

@@ -28,7 +28,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/mdp/qrterminal"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/proto"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -40,20 +39,21 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.6.4"                      //The version of application
+var AppVersion = "0.7.0-pre"                  //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
 const dbPath = "db/"                          //The location where datafiles are stored
 const bookingFile = dbPath + "booking.json"   //The json file to store bookings in
-const boatFile = dbPath + "boats.json"        //The json file to store boats
+const boatNameFile = dbPath + "boats.json"    //The json file to store boats
+const boatFile = dbPath + "boatdata.json"     //The json file to store boats
 const userFile = dbPath + "users.json"        //The json file to store users
 const whatsAppFile = dbPath + "whatsapp.json" //The json file to store whatsapp info
 const teamFile = dbPath + "teams.json"        //The json file to store group info
 const dbFile = dbPath + "myfleetrobot.db"     //The db file to store whatsapp sessions
 const versionFile = dbPath + "version.json"   //The  file to store version info
 var timeZoneLoc = "Europe/Amsterdam"          //The time zone location for the club
-var timeZone = "+02:00"                       //The time zone in hour, is also calculated
+var timeZone = ""                             //The time zone in hour, is also calculated
 var minDuration = 60                          //The minimal duration required to book
 var maxDuration = 120                         //The maximal duration allowed to book
 var bookWindow = 48                           //The number of hours allowed to book
@@ -131,36 +131,6 @@ type WhatsAppToInterface struct {
 	LastUsed int64  `db:"lastused" json:"lastused"`
 }
 
-//Struc used to store boat and session info
-type BookingInterface struct {
-	Id          int64          `db:"id" json:"id"`
-	Team        string         `db:"team" json:"team"`
-	Name        string         `db:"boat" json:"boat"`
-	Date        string         `db:"date" json:"date"`
-	Time        string         `db:"time" json:"time"`
-	Duration    int64          `db:"duration" json:"duration"`
-	Username    string         `db:"user" json:"user"`
-	Password    string         `db:"password" json:"password"`
-	Comment     string         `db:"comment" json:"comment"`
-	Repeat      RepeatType     `db:"repeat" json:"repeat,omitempty"`
-	State       string         `db:"state" json:"state,omitempty"`
-	BookingId   string         `db:"bookingid" json:"bookingid,omitempty"`
-	BoatId      string         `db:"boatid" json:"boatid,omitempty"`
-	Message     string         `db:"message" json:"message,omitempty"`
-	EpochNext   int64          `db:"epochnext" json:"next,omitempty"`
-	Retry       int            `db:"retrycounter" json:"retry,omitempty"`
-	UserComment bool           `db:"usercomment" json:"usercomment"`
-	WhatsAppTo  string         `db:"whatsapp" json:"whatsapp,omitempty"`
-	TimeZone    string         `db:"-" json:"-"`
-	Cookies     []*http.Cookie `db:"-" json:"-"`
-	Bookings    *[][]string    `db:"-" json:"-"`
-	EpochDate   int64          `db:"-" json:"-"`
-	EpochStart  int64          `db:"-" json:"-"`
-	EpochEnd    int64          `db:"-" json:"-"`
-	Authorized  bool           `db:"-" json:"-"`
-	Changed     bool           `db:"-" json:"-"`
-}
-
 type TeamInterface struct {
 	Id         int64  `db:"id" json:"id"`
 	Team       string `db:"team" json:"team"`
@@ -174,19 +144,6 @@ type TeamInterface struct {
 	QRCode     string `db:"-" json:"qrcode"`
 	Prefix     string `db:"prefix" json:"prefix"`
 	Planner    bool   `db:"planner" json:"planner"`
-}
-
-//The list of bookings
-type BookingSlice []BookingInterface
-
-//The struct used to retreive available boats
-type BoatListInterface struct {
-	SunRise    int64
-	SunSet     int64
-	EpochDate  int64
-	EpochStart int64
-	EpochEnd   int64
-	Boats      *[][]string
 }
 
 //Used to store version info
@@ -204,14 +161,73 @@ type ActivityInterface struct {
 	Repeat    RepeatType `db:"repeat" json:"repeat"`
 }
 
+type BoatElementBookingStruct struct {
+	Type        string `json:"type"`     // =R.s
+	EpochStart  int64  `json:"start"`    //Start + (x/12)*15
+	EpochEnd    int64  `json:"end"`      //Start +(x+w)/12*15
+	Duration    int64  `json:"duration"` //(x+w)/12 in min
+	BookingId   int64  `json:"bookingId,omitempty"`
+	BookingInfo string `json:"bookingInfo,omitempty"`
+}
+
+type BoatElementStruct struct {
+	Id          int                        `json:"id"`          // BoatId
+	Name        string                     `json:"name"`        //BoatName BoatInfo[0]
+	Type        string                     `json:"type"`        //BoatType BoatInfo[1]
+	Location    string                     `json:"location"`    //BoatLocation BoatInfo[2]
+	WeigthClass string                     `json:"weightclass"` //WeigthClass BoatInfo[3]
+	Permission  string                     `json:"permission"`  //Permission BoatInfo[5]
+	Bookings    []BoatElementBookingStruct `json:"bookings"`
+}
+type BoatListStruct []BoatElementStruct
+
+//Struc used to store boat and session info
+type BookingInterface struct {
+	Id            int64           `db:"id" json:"id"`
+	Team          string          `db:"team" json:"team"`
+	Name          string          `db:"boat" json:"boat"`
+	Fallback      string          `db:"fallback" json:"fallback,omitempty"`
+	Date          string          `db:"date" json:"date"`
+	Time          string          `db:"time" json:"time"`
+	Duration      int64           `db:"duration" json:"duration"`
+	Username      string          `db:"user" json:"user"`
+	Password      string          `db:"password" json:"password"`
+	Comment       string          `db:"comment" json:"comment"`
+	Repeat        RepeatType      `db:"repeat" json:"repeat,omitempty"`
+	State         string          `db:"state" json:"state,omitempty"`
+	BookingId     int64           `db:"bookingid" json:"bookingid,omitempty"`
+	BoatId        string          `db:"boatid" json:"boatid,omitempty"`
+	Message       string          `db:"message" json:"message,omitempty"`
+	EpochNext     int64           `db:"epochnext" json:"next,omitempty"`
+	Retry         int             `db:"retrycounter" json:"retry,omitempty"`
+	UserComment   bool            `db:"usercomment" json:"usercomment"`
+	WhatsAppTo    string          `db:"whatsapp" json:"whatsapp,omitempty"`
+	Logs          []string        `db:"logs" json:"logs,omitempty"`
+	TimeZone      string          `db:"-" json:"-"`
+	Boats         *BoatListStruct `db:"-" json:"-"`
+	GuiEpochStart int64           `db:"-" json:"-"`
+	GuiFleetId    string          `db:"-" json:"-"`
+	Cookies       []*http.Cookie  `db:"-" json:"-"`
+	EpochDate     int64           `db:"-" json:"-"`
+	EpochStart    int64           `db:"-" json:"-"`
+	EpochEnd      int64           `db:"-" json:"-"`
+	Changed       bool            `db:"-" json:"-"`
+	UserId        int64           `db:"-" json:"-"`
+}
+
+//The list of bookings
+type BookingSlice []BookingInterface
+
 var singleRun bool = false                //Should we do a single runonly = nowebserver
-var commentPrefix string = "MYFR:"        //The prefix we use as a comment indicator the booking is ours
+var commentPrefix string = ""             //The prefix we use as a comment indicator the booking is ours
 var bindAddress string = ":1323"          //The default bind port of web server
 var jsonTeam string                       //The Basic Auth team of webserer
 var jsonPwd string                        //The Basic Auth password of webserver
 var jsonProtect bool                      //Should the web server use Basic Auth
-var baseUrl string                        //The base url towards the fleet.eu backend
+var textUrl string                        //Default backend url
 var guiUrl string                         //The gui url towards the fleet.eu backend
+var authUrl string                        //Backend url towards authentication
+var mobileUrl string                      //The mobile backend
 var test string = ""                      //The test we should be running, means allways single ru
 var title string = ""                     //The title string
 var mutex *sync.Mutex = &sync.Mutex{}     //The lock used where writing files
@@ -350,7 +366,7 @@ func updateTimeZone() {
 	}
 	tz := time.Now().In(loc).Format("-07:00")
 	if tz != timeZone {
-		log.Info("TimeZone: " + timeZone)
+		log.Info("TimeZone: " + tz)
 		timeZone = tz
 	}
 }
@@ -414,8 +430,10 @@ func Init() {
 
 	//Only enable jsonProtection if we have a username and password
 	jsonProtect = (jsonTeam != "" && jsonPwd != "")
-	baseUrl = "https://my-fleet.eu/" + myFleetVersion + "/mobile/index0.php?&system=mobile&language=NL"
 	guiUrl = "https://my-fleet.eu/" + myFleetVersion + "/gui/index.php"
+	textUrl = "https://my-fleet.eu/" + myFleetVersion + "/text/index.php"
+	authUrl = "https://my-fleet.eu/" + myFleetVersion + "/text/authenticate.php"
+	mobileUrl = "https://my-fleet.eu/" + myFleetVersion + "/mobile/index0.php?&system=mobile&language=NL"
 
 	//Get the local time zone
 	updateTimeZone()
@@ -429,248 +447,95 @@ func Init() {
 	}
 	//Read the teams once, are also read on every login
 	teams = readTeamJson()
+	//If we have a teams file enable jsonProtect
+	if len(teams) != 0 {
+		jsonProtect = true
+	}
 
 	//Log the version
 	log.Info(AppName + " v" + AppVersion)
 }
 
-//Create from the html response a booking array
-func readbookingList(htm *string) *[][]string {
-	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(*htm))
-	var row []string
-	var rows [][]string
-	re := regexp.MustCompile(`goIE8\(this, "edit", "", ([0-9]+)\);$`)
-	// Find each table
-	var curDate string
-	doc.Find("table").Each(func(base int, basehtml *goquery.Selection) {
-		basehtml.Find("tr").Each(func(basetr int, baserow *goquery.Selection) {
-			baserow.Find("td").Each(func(baseth int, basecell *goquery.Selection) {
-				if basecell.HasClass("rsrv_overview_date") {
-					dateS := strings.Fields(basecell.Text()) //donderdag 21 juli 2022
-					curDate = dateS[3] + "-" + maandFilter[dateS[2]] + "-" + dateS[1]
-				}
-				basecell.Find("table").Each(func(indextbl int, tablehtml *goquery.Selection) {
-					tablehtml.Find("tr").Each(func(indextr int, rowhtml *goquery.Selection) {
-						rowhtml.Find("td").Each(func(indexth int, tablecell *goquery.Selection) {
-							s := strings.TrimSpace(tablecell.Text())
-							if s != "" {
-								//On a new row add the last time
-								if row == nil {
-									row = append(row, curDate)
-								}
-								row = append(row, s)
-							}
-						})
-					})
-
-				})
-			})
-			link, exist := baserow.Attr("onclick")
-			if row != nil && exist {
-				nr := re.FindStringSubmatch(link)
-				if len(nr) == 2 {
-					row = append([]string{nr[1]}, row...)
-				}
-			}
-			if row != nil {
-				rows = append(rows, row)
-				row = nil
-			}
-		})
-
-	})
-	return &rows
+//Logout for the specified booking
+func logout(booking *BookingInterface) error {
+	//Just check if we have a session
+	if booking.Cookies != nil {
+		var random string = fmt.Sprint(time.Now().Nanosecond())
+		//Calling auth with new random will kill the sessie
+		request, _ := http.NewRequest(http.MethodGet, authUrl+"?random="+random, nil)
+		for _, o := range booking.Cookies {
+			request.AddCookie(o)
+		}
+		client := &http.Client{}
+		client.Do(request)
+	}
+	booking.Cookies = nil
+	return nil
 }
 
-//Create from the html response a boatlist of available boats and store it in the boatList passed
-func readboatList(booking *BookingInterface, boatList *BoatListInterface, htm *string) {
-	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(*htm))
-	var row []string
-	var rows [][]string
-	re := regexp.MustCompile(`go\(this, "new", "make", ([0-9]+)\);$`)
+func session(booking *BookingInterface) error {
+	//We use the textUrl and guiUrl to get the session cookie
+	response, _ := http.Get(textUrl + "?clubname=" + clubId + "&variant=")
+	defer response.Body.Close()
+	booking.Cookies = response.Cookies()
+	response, _ = http.Get(guiUrl + "?clubname=" + clubId + "&variant=")
+	defer response.Body.Close()
+	booking.Cookies = append(booking.Cookies, response.Cookies()...)
+
+	//Get the GuiStartEpoch and GuiFleetId
+	request, _ := http.NewRequest(http.MethodGet, guiUrl+"?clubname="+clubId, nil)
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	client := &http.Client{}
+	response, _ = client.Do(request)
+	defer response.Body.Close()
+	b, _ := io.ReadAll(response.Body)
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(string(b)))
 	// Find the sunrise, sunset, min and max times allowed
 	doc.Find("form").Each(func(base int, basehtml *goquery.Selection) {
 		basehtml.Find("input").Each(func(baseint int, basein *goquery.Selection) {
-			val, exists := basein.Attr("placeholder")
-			if exists && val == ":Gebruikersnaam" {
-				booking.Authorized = false
-			}
-		})
-		basehtml.Find("img").Each(func(basesl int, baseselect *goquery.Selection) {
-			val, exists := baseselect.Attr("src")
-			//SunRise -15min truncated at 15min mark
-			if exists && val == "css/solopp.gif" {
-				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "-")[0]+":00"+timeZone)
-				boatList.SunRise = thetime.Add(-time.Minute * 15).Truncate(15 * time.Minute).Unix()
-				//boatList.SunRise = thetime.Add(-time.Minute * 15).Round(15 * time.Minute).Unix()
-			}
-			//SunSet +15 min
-			if exists && val == "css/solned.gif" {
-				thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+strings.Split(strings.TrimSpace(baseselect.Parent().Text()), "+")[0]+":00"+timeZone)
-				boatList.SunSet = thetime.Add(time.Minute * 15).Round(15 * time.Minute).Unix()
-			}
-		})
-		basehtml.Find("select").Each(func(basesl int, baseselect *goquery.Selection) {
-			val, exists := baseselect.Attr("id")
-			if exists && val == "date" {
-				//Get the max date of the last option
-				baseselect.Find("option").Each(func(baseop int, baseoption *goquery.Selection) {
-					val2, _ := baseoption.Attr("value")
-					boatList.EpochDate, _ = strconv.ParseInt(val2, 10, 64)
-				})
-			}
+			val, exists := basein.Attr("name")
 			if exists && val == "start" {
-				//Get the first start  of the option
-				baseselect.Find("option").Each(func(baseop int, baseoption *goquery.Selection) {
-					val2, _ := baseoption.Attr("value")
-					if baseop == 0 {
-						boatList.EpochStart, _ = strconv.ParseInt(val2, 10, 64)
+				val, exists = basein.Attr("value")
+				if exists {
+					theTime, err := time.Parse(time.RFC3339, (strings.Fields(val)[0])+"T"+(strings.Fields(val)[1])+":00"+timeZone)
+					if err == nil {
+						booking.GuiEpochStart = theTime.Unix()
 					}
-					ee, _ := strconv.ParseInt(val2, 10, 64)
-					ee += int64(minDuration) * 60 //Add the minimal book time
-					boatList.EpochEnd = MaxInt64(ee, boatList.EpochEnd)
-				})
-				baseselect.Find("optgroup").Each(func(baseop int, baseoption *goquery.Selection) {
-					val2, _ := baseoption.Attr("label")
-					thetime, _ := time.Parse(time.RFC3339, shortDate(booking.Date)+"T"+val2+":00"+timeZone)
-					ee := thetime.Unix()
-					ee += int64(minDuration) * 60 //Add the minimal book time
-					boatList.EpochEnd = MaxInt64(ee, boatList.EpochEnd)
-				})
-			}
-			if exists && val == "end" {
-				//Get the first start  of the option
-				baseselect.Find("option").Each(func(baseop int, baseoption *goquery.Selection) {
-					val2, _ := baseoption.Attr("value")
-					epochEnd, _ := strconv.ParseInt(val2, 10, 64)
-					boatList.EpochEnd = MaxInt64(epochEnd, boatList.EpochEnd)
-				})
+				}
 			}
 		})
 	})
 
-	// Find each table
-	doc.Find("table").Each(func(base int, basehtml *goquery.Selection) {
-		if basehtml.HasClass("rsrv_overview") {
-			basehtml.Find("tr").Each(func(basetr int, baserow *goquery.Selection) {
-				baserow.Find("td").Each(func(baseth int, basecell *goquery.Selection) {
-					basecell.Find("table").Each(func(indextbl int, tablehtml *goquery.Selection) {
-						tablehtml.Find("tr").Each(func(indextr int, rowhtml *goquery.Selection) {
-							rowhtml.Find("td").Each(func(indexth int, tablecell *goquery.Selection) {
-								s := strings.TrimSpace(tablecell.Text())
-								if s != "" {
-									row = append(row, s)
-								}
-							})
-						})
-					})
-				})
-				link, exist := baserow.Attr("onclick")
-				if row != nil && exist {
-					nr := re.FindStringSubmatch(link)
-					if len(nr) == 2 {
-						row = append([]string{nr[1]}, row...)
-					}
-				}
-				if row != nil {
-					rows = append(rows, row)
-					row = nil
-				}
-			})
+	doc.Find("link").Each(func(base int, basehtml *goquery.Selection) {
+		_, exists := basehtml.Attr("media")
+		val, exists2 := basehtml.Attr("href")
+		if exists && exists2 { //href=index.php?a=i&uniq=myfleet62e7e8ea838ba
+			re := regexp.MustCompile(`.*uniq=(.*)$`)
+			booking.GuiFleetId = re.FindStringSubmatch(val)[1]
 		}
 	})
-	//Save the rows as boats
-	boatList.Boats = &rows
+	if booking.GuiFleetId == "" || booking.GuiEpochStart == 0 {
+		return errors.New("GuiFleetId or GuiEpochStart not found")
+	}
+	//log.Info("GuiEpochStart:", booking.GuiEpochStart)
+	return nil
 }
 
-//Search a boat for the specified booking
-func boatSearchByTime(booking *BookingInterface, starttime int64) (*BoatListInterface, error) {
-	var filter string = "0"
-	var boatList BoatListInterface
-	boatList.EpochDate = booking.EpochDate
-	data := url.Values{}
-	data.Set("action", "new")
-	data.Set("exec", "")
-	data.Set("id", "")
-	data.Set("typeFilter", filter)
-	data.Set("date", strconv.FormatInt(booking.EpochDate, 10))
-	data.Set("start", strconv.FormatInt(starttime, 10))
-	//data.Set("end", strconv.FormatInt(endtime, 10))
-	data.Set("username", booking.Username)
-	data.Set("password", booking.Password)
-	data.Set("comment", "")
-	request, err := http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-	for _, o := range booking.Cookies {
-		request.AddCookie(o)
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	if err != nil {
-		return nil, err
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return nil, errors.New("HTTP Status is out of the 2xx range")
-	}
-	b, _ := io.ReadAll(response.Body)
-	str := string(b)
-	readboatList(booking, &boatList, &str)
-	if !booking.Authorized {
-		return &boatList, errors.New("user is not authorized")
-	}
-	return &boatList, err
-}
-
-//Default boat search for the specifed period
-func boatSearch(booking *BookingInterface) (*BoatListInterface, error) {
-	return boatSearchByTime(booking, booking.EpochDate)
-}
-
-func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
-	//We need to have a boot id before we can do a booking
-	if booking.BoatId == "" {
-		boatList, err := boatSearchByTime(booking, starttime)
-		if err != nil {
-			return err
-		}
-		for _, bb := range *boatList.Boats { //Array element 2 is the boat name
-			if strings.Contains(strings.ToLower(bb[2]), strings.ToLower(booking.Name)) {
-				//Book the boat id is element 0
-				booking.BoatId = bb[0]
-				break
-			}
-		}
-		if booking.BoatId == "" {
-			return errors.New("no boatID found")
-		}
-	}
-
-	data := url.Values{}
-	data.Set("action", "new")
-	data.Set("exec", "make")
-	data.Set("id", booking.BoatId) //When making a boat booking we need to use the boatId
-	data.Set("typeFilter", "0")
-	data.Set("date", strconv.FormatInt(booking.EpochDate, 10))
-	data.Set("start", strconv.FormatInt(starttime, 10))
-	data.Set("end", strconv.FormatInt(endtime, 10))
-	data.Set("username", booking.Username)
-	data.Set("password", booking.Password)
-	team, err := getTeamByName(booking.Team)
-	data.Set("comment", cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+booking.Comment)
-	request, err := http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-	for _, o := range booking.Cookies {
-		request.AddCookie(o)
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	if err != nil {
+//Login for the specified booking and save the required cookie
+func login(booking *BookingInterface) error {
+	random := fmt.Sprint(time.Now().Nanosecond())
+	if err := session(booking); err != nil {
 		return err
 	}
+
+	//First get authentication killling old session
+	request, _ := http.NewRequest(http.MethodGet, authUrl+"?random="+random, nil)
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
@@ -680,83 +545,100 @@ func boatBook(booking *BookingInterface, starttime int64, endtime int64) error {
 	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
 		return errors.New("HTTP Status is out of the 2xx range")
 	}
-	b, _ := io.ReadAll(response.Body)
-	booking.BookingId = ""
-	//<input type=button onclick="document.getElementById('loader').src='../gui/generateICS.php?rid=442863&invite=1';" value="iCal uitnodiging" /><br /></span></form>
-	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(string(b)))
-	re := regexp.MustCompile(`.*?rid=([0-9]+).*;$`)
-	// Find the sunrise, sunset, min and max times allowed
-	doc.Find("input").Each(func(base int, baseinput *goquery.Selection) {
-		val, exists := baseinput.Attr("value")
-		if exists && val == "iCal afspraak" {
-			link, _ := baseinput.Attr("onclick")
-			nr := re.FindStringSubmatch(link)
-			booking.BookingId = nr[1]
-		}
-	})
-	if booking.BookingId == "" {
-		return errors.New("booking number could not befound")
+	//Now post the our info to login
+	data := url.Values{}
+	data.Set("un", booking.Username)
+	data.Set("pw", booking.Password)
+	request, _ = http.NewRequest(http.MethodPost, authUrl+"?random="+random,
+		strings.NewReader(data.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
 	}
-	return err
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+	b, _ := io.ReadAll(response.Body)
+	//Correct loging
+	if !strings.Contains(string(b), "Exit Page") {
+		return errors.New("Login response invalid:" + string(b))
+	}
+
+	//Now get the user ID
+	request, _ = http.NewRequest(http.MethodGet, textUrl+"?clubname="+clubId+"&variant=", nil)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+	b, _ = io.ReadAll(response.Body)
+	re := regexp.MustCompile(`brsuser=(.*)"`)
+	rem := re.FindStringSubmatch(string(b))
+	booking.UserId = 0
+	if len(rem) > 0 {
+		booking.UserId, _ = strconv.ParseInt(rem[1], 10, 64)
+	}
+	if booking.UserId == 0 {
+		return errors.New("User id not found")
+	}
+
+	//Get the new GuiFleedId
+	request, _ = http.NewRequest(http.MethodGet, guiUrl+"?language=NL&brsuser="+strconv.FormatInt(booking.UserId, 10)+"&clubname="+clubId, nil)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer response.Body.Close()
+	bs, _ := io.ReadAll(response.Body)
+	booking.Cookies = append(booking.Cookies, response.Cookies()...)
+
+	re = regexp.MustCompile(`&uniq=(.*)"`)
+	rem = re.FindStringSubmatch(string(bs))
+	if len(rem) == 0 {
+		return errors.New("GuiFleedId not found")
+	}
+	booking.GuiFleetId = rem[1]
+
+	return nil
+
 }
 
 //Cancel a booking
 func boatCancel(booking *BookingInterface) error {
-	data := url.Values{}
-	data.Set("action", "edit")
-	data.Set("exec", "cancel") //Perhase also update, check javascript
-	data.Set("id", booking.BookingId)
-	data.Set("username", booking.Username)
-	data.Set("password", booking.Password)
-	team, err := getTeamByName(booking.Team)
-	data.Set("comment", cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+booking.Comment)
-	request, err := http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-	for _, o := range booking.Cookies {
-		request.AddCookie(o)
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	if err != nil {
-		return err
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-	booking.State = "Canceled"
-	return err
-}
-
-//Confirm a booking
-func confirmBoat(booking *BookingInterface) error {
-	log.Error("Confirm Boat not implemented")
-	return nil
-}
-
-//Update a boat booking start and end time
-func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
-	//STEP: Session
-	cookies, guiEpochStart, _, err := guiSession()
-	if err != nil {
-		return err
-	}
-
+	var err error
 	//STEP: Create Reference to the booking
 	request, err := http.NewRequest(http.MethodGet, guiUrl, nil)
 	values := request.URL.Query()
 	values.Set("a", "e")
-	values.Set("menu", "Rmenu")
+	values.Set("menu", "Omenu")
 	values.Set("extrainfo", "mid="+booking.BoatId+
-		"&co=0&rid="+booking.BookingId+
-		"&from="+strconv.FormatInt(int64((booking.EpochStart-guiEpochStart)/(15*60)), 10)+
-		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0")
+		"&co=0&rid="+strconv.FormatInt(booking.BookingId, 10)+
+		"&from="+strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0&user="+strconv.FormatInt(booking.UserId, 10))
 	request.URL.RawQuery = values.Encode()
-	for _, o := range cookies {
+	for _, o := range booking.Cookies {
 		request.AddCookie(o)
 	}
 	if err != nil {
@@ -774,18 +656,146 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 
 	//Step 2: Login to the reference
 	data := url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-guiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-guiEpochStart+booking.Duration*60)/(15*60)), 10))
+	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart+booking.Duration*60)/(15*60)), 10))
+	//	data.Set("clubcode", "")
+	//	data.Set("username", booking.Username)
+	//	data.Set("password", booking.Password)
+	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Rmenu&page=1_cancel", strings.NewReader(data.Encode()))
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+
+	booking.State = "Canceled"
+	return err
+}
+
+//Confirm a booking
+func confirmBoat(booking *BookingInterface) error {
+	log.Error("Confirm Boat not implemented")
+	return nil
+}
+
+//Update a boat booking start and end time
+func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
+	//STEP: Session
+	booking.BookingId = 0
+
+	//STEP: Create Reference to the booking
+	request, err := http.NewRequest(http.MethodGet, guiUrl, nil)
+	values := request.URL.Query()
+	values.Set("a", "e")
+	values.Set("menu", "Amenu")
+	values.Set("extrainfo", "mid="+booking.BoatId+
+		"&from="+strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10))
+	request.URL.RawQuery = values.Encode()
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+
+	//Step 2: Login to the reference
+	data := url.Values{}
+	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart+booking.Duration*60)/(15*60)), 10))
+	team, err := getTeamByName(booking.Team)
+	c := cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix) + booking.Comment
+	if c != "" {
+		data.Set("comment", c)
+	}
+	data.Set("act", "Verder\n>>")
+	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Amenu&page=1_single", strings.NewReader(data.Encode()))
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	//request.Header.Set("Referer", guiUrl+"?"+values.Encode())
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client = &http.Client{}
+	response, err = client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+	//Check if the boat is the boat we where looking for
+	//Read the booking id form the reponse
+	b, _ := io.ReadAll(response.Body)
+	re := regexp.MustCompile(`ReservationId = (.*) `)
+	rem := re.FindStringSubmatch(string(b))
+	if len(rem) > 0 {
+		booking.BookingId, _ = strconv.ParseInt(strings.Trim(rem[1], " "), 10, 64)
+	}
+	if booking.BookingId == 0 {
+		return errors.New("Failed to create reservation")
+	}
+	return nil
+}
+
+//Update a boat booking start and end time
+func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
+
+	//STEP: Create Reference to the booking
+	request, err := http.NewRequest(http.MethodGet, guiUrl, nil)
+	values := request.URL.Query()
+	values.Set("a", "e")
+	values.Set("menu", "Rmenu")
+	values.Set("extrainfo", "mid="+booking.BoatId+
+		"&co=0&rid="+strconv.FormatInt(booking.BookingId, 10)+
+		"&from="+strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0")
+	request.URL.RawQuery = values.Encode()
+	for _, o := range booking.Cookies {
+		request.AddCookie(o)
+	}
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
+		return errors.New("HTTP Status is out of the 2xx range")
+	}
+
+	//Step 2: Login to the reference
+	data := url.Values{}
+	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart+booking.Duration*60)/(15*60)), 10))
 	data.Set("clubcode", "")
 	data.Set("username", booking.Username)
 	data.Set("password", booking.Password)
 	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Rmenu&page=1_modifylogbook", strings.NewReader(data.Encode()))
-	for _, o := range cookies {
+	for _, o := range booking.Cookies {
 		request.AddCookie(o)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	//request.Header.Set("Referer", rawQuery)
 	client = &http.Client{}
 	response, err = client.Do(request)
 	if err != nil {
@@ -799,19 +809,20 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 
 	//STEP: Update the booking
 	data = url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((startTime-guiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((endTime-guiEpochStart)/(15*60)), 10))
+	data.Set("newStart", strconv.FormatInt(int64((startTime-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((endTime-booking.GuiEpochStart)/(15*60)), 10))
 	team, err := getTeamByName(booking.Team)
-	data.Set("comment", cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix)+booking.Comment)
+	c := cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix) + booking.Comment
+	if c != "" {
+		data.Set("comment", c)
+	}
 	data.Set("page", "3_commit")
 	data.Set("act", "Ok")
 	request, _ = http.NewRequest(http.MethodPost, guiUrl+"?a=e&menu=Amenu", strings.NewReader(data.Encode()))
-	for _, o := range cookies {
+	for _, o := range booking.Cookies {
 		request.AddCookie(o)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("DNT", "1")
-	//request.Header.Set("Referer", rawQuery)
 	client = &http.Client{}
 	response, err = client.Do(request)
 	if err != nil {
@@ -821,226 +832,165 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
 		return errors.New("HTTP Status is out of the 2xx range")
 	}
-	/* TODO: Error handling
-	b, _ := io.ReadAll(response.Body)
-	booking.BookingId = ""
-	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(string(b)))
-	re := regexp.MustCompile(`.*?rid=([0-9]+).*;$`)
-	// Find the sunrise, sunset, min and max times allowed
-	doc.Find("input").Each(func(base int, baseinput *goquery.Selection) {
-		val, exists := baseinput.Attr("value")
-		if exists && val == "iCal afspraak" {
-			link, _ := baseinput.Attr("onclick")
-			nr := re.FindStringSubmatch(link)
-			booking.BookingId = nr[1]
-		}
-	})
-	if booking.BookingId == "" {
-		return errors.New("booking number could not befound")
-	}
-	*/
 	return nil
 }
 
-//Create a gui session to work on
-func guiSession() ([]*http.Cookie, int64, string, error) {
-	//Step 1: Get EportStart of GUI and the FleetID
-	var guiEpochStart int64
-	var guiFleetId string
-
-	request, _ := http.NewRequest(http.MethodGet, guiUrl+"?language=NL&brsuser=-1&clubname="+clubId, nil)
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, guiEpochStart, guiFleetId, err
-	}
-	defer response.Body.Close()
-	cookies := response.Cookies()
-	b, _ := io.ReadAll(response.Body)
-
-	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(string(b)))
-	// Find the sunrise, sunset, min and max times allowed
-	doc.Find("form").Each(func(base int, basehtml *goquery.Selection) {
-		basehtml.Find("input").Each(func(baseint int, basein *goquery.Selection) {
-			val, exists := basein.Attr("name")
-			if exists && val == "start" {
-				val, exists = basein.Attr("value")
-				if exists {
-					theTime, err := time.Parse(time.RFC3339, (strings.Fields(val)[0])+"T"+(strings.Fields(val)[1])+":00"+timeZone)
-					if err == nil {
-						guiEpochStart = theTime.Unix()
-					}
-				}
-			}
-		})
-	})
-
-	doc.Find("link").Each(func(base int, basehtml *goquery.Selection) {
-		_, exists := basehtml.Attr("media")
-		val, exists2 := basehtml.Attr("href")
-		if exists && exists2 { //href=index.php?a=i&uniq=myfleet62e7e8ea838ba
-			re := regexp.MustCompile(`.*uniq=(.*)$`)
-			guiFleetId = re.FindStringSubmatch(val)[1]
-		}
-	})
-	if guiFleetId == "" || guiEpochStart == 0 {
-		return cookies, guiEpochStart, guiFleetId, errors.New("guiFleetId or guiEpochStart not found")
-	}
-	return cookies, guiEpochStart, guiFleetId, nil
-}
-
-//Logout for the specified booking
-func logout(booking *BookingInterface) error {
-	var err error
-	if len(booking.Cookies) != 0 {
-		var request *http.Request
-		data := url.Values{}
-		data.Set("action", "logout")
-		data.Set("exec", "")
-		data.Set("id", "")
-		request, err = http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-		for _, o := range booking.Cookies {
-			request.AddCookie(o)
-		}
-		if err != nil {
-			return err
-		}
-		client := &http.Client{}
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-			return errors.New("HTTP Status is out of the 2xx range")
-		}
-		booking.Cookies = response.Cookies()
-	}
-	return err
-}
-
-//Login for the specified booking and save the required cookie
-func login(booking *BookingInterface) error {
-	var err error
-	var request *http.Request
-	booking.Authorized = false
-	//Step 1: Get Cookie
-	var webUrl string = "https://my-fleet.eu/" + myFleetVersion + "/text/index.php?clubname=" + clubId + "&variant="
-	request, err = http.NewRequest(http.MethodGet, webUrl, nil)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
-	}
-	booking.Cookies = response.Cookies()
-	if len(booking.Cookies) == 0 {
-		return errors.New("no session cookie")
-	}
-
-	//Step 2: It we will get the main pages including the bookinglist
-	data := url.Values{}
-	data.Set("action", "new")
-	data.Set("exec", "")
-	data.Set("id", "")
-	data.Set("username", booking.Username)
-	data.Set("password", booking.Password)
-	request, err = http.NewRequest(http.MethodPost, baseUrl, strings.NewReader(data.Encode()))
-	if err != nil {
-		return err
-	}
+func guiAction(booking *BookingInterface, action string) (string, error) {
+	request, _ := http.NewRequest(http.MethodGet, guiUrl, nil)
+	values := request.URL.Query()
+	values.Set("a", action)
+	values.Set("uniq", booking.GuiFleetId)
+	request.URL.RawQuery = values.Encode()
 	for _, o := range booking.Cookies {
 		request.AddCookie(o)
 	}
-	response, err = client.Do(request)
+	client := &http.Client{}
+	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer response.Body.Close()
 	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-		return errors.New("HTTP Status is out of the 2xx range")
+		return "", err
 	}
-	b, _ := io.ReadAll(response.Body)
-	str := string(b)
-	booking.Bookings = readbookingList(&str)
-	booking.Authorized = true
-	return nil
+	bd, _ := io.ReadAll(response.Body)
+	return string(bd), nil
 }
 
 //Read the boat list and create it if not found
-func readBoatJson() []string {
-	var b []string
-	b = append(b, "No Boats")
-	fs, err := os.Stat(boatFile)
+func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct) {
+	var blist []string
+	var fs os.FileInfo
+	var err error
+	var booking *BookingInterface
+	blist = append(blist, "No Boats")
+	boats := BoatListStruct{}
+	if book == nil {
+		booking = &BookingInterface{}
+		if err := session(booking); err != nil {
+			return blist, boats
+		}
+		fs, err = os.Stat(boatNameFile)
+	} else {
+		booking = book
+		fs, err = os.Stat(boatFile)
+	}
 	//We need to check if we have the boat file, load it for the first authorized
-	if errors.Is(err, os.ErrNotExist) || !fs.ModTime().After(time.Now().Add(-24*time.Hour)) {
-		cookies, _, guiFleetId, err := guiSession()
+	if errors.Is(err, os.ErrNotExist) || fs.ModTime().Before(time.Now().Add(-time.Duration(maxAge)*time.Second)) {
+		//Get the unix start time of screen
+		str, err := guiAction(booking, "b")
 		if err != nil {
 			log.Error("GuiSession Failed", err)
-			return b
+			return blist, boats
 		}
-		request, _ := http.NewRequest(http.MethodGet, guiUrl, nil)
-		values := request.URL.Query()
-		values.Set("a", "c")
-		values.Set("uniq", guiFleetId)
-		request.URL.RawQuery = values.Encode()
-		for _, o := range cookies {
-			request.AddCookie(o)
-		}
-		client := &http.Client{}
-		response, err := client.Do(request)
-		if err != nil {
-			log.Error("Client session fleet script", err)
-			return b
-		}
-		defer response.Body.Close()
-		if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
-			log.Error("Retrieve fleet script", err)
-			return b
-		}
-		bd, _ := io.ReadAll(response.Body)
-		str := string(bd)
-		re := regexp.MustCompile(`var info=(.*);`)
+		epochStart := int64(0)
+		re := regexp.MustCompile(`var starttime_unix = "(.*)";`)
 		rem := re.FindStringSubmatch(str)
 		if len(rem) > 0 {
-			b = []string{}
-			btl := strings.Split(rem[1], "<b>Bootnaam<\\/b>: ")
-			for _, bt := range btl {
-				bs := strings.Split(bt, "<br")
-				if len(bs) > 1 {
-					if !slices.Contains(b, strings.TrimSpace(bs[0])) {
-						b = append(b, strings.TrimSpace(bs[0]))
-					}
-				}
-			}
-			json_to_file, _ := json.Marshal(b)
-			mutex.Lock()
-			err := ioutil.WriteFile(boatFile, json_to_file, 0755)
-			mutex.Unlock()
-			if err != nil {
-				log.Error(err)
-			}
-			log.Info("Boat list created")
+			epochStart, _ = strconv.ParseInt(rem[1], 10, 64)
 		}
-		return b
+
+		//Get the content of screen
+		str, err = guiAction(booking, "c")
+		if err != nil {
+			log.Error("GuiSession Failed", err)
+			return blist, boats
+		}
+		re = regexp.MustCompile(`var info=(.*);`)
+		rem = re.FindStringSubmatch(str)
+		if len(rem) > 0 {
+			/* Parse the boat list*/
+			type BoatStruct []struct {
+				M struct {
+					P        string   `json:"p"`
+					BoatId   int      `json:"i"`
+					R        string   `json:"r"`
+					A        string   `json:"a"`
+					B        string   `json:"b"`
+					BoatInfo []string `json:"c"` //  [name,type,location,weigth,spacer,permision]
+				} `json:"m"`
+				R []struct {
+					P  string  `json:"p"`
+					S  string  `json:"s"`
+					Y  int     `json:"y"`
+					X  float64 `json:"x"`
+					I  int     `json:"i"`
+					R  int     `json:"r"`
+					W  float64 `json:"w"`
+					U  string  `json:"u"`
+					O  int     `json:"o"`
+					C  string  `json:"c"`
+					ID int64   `json:"id"`
+				} `json:"r"`
+			}
+			webboats := BoatStruct{}
+			err := json.Unmarshal([]byte(rem[1]), &webboats)
+			if err != nil {
+				blist = []string{}
+				re = regexp.MustCompile(`var grid_width = (.*);`)
+				rem = re.FindStringSubmatch(str)
+				pixelToMin := float64(12)
+				if len(rem) > 0 {
+					pixelToMin, _ = strconv.ParseFloat(rem[1], 64)
+				}
+				for _, b := range webboats {
+					//Create a new boat
+					bname := strings.Split(b.M.BoatInfo[0], "\u0026")[0]
+					bc := BoatElementStruct{Id: b.M.BoatId, Name: bname, Type: b.M.BoatInfo[1],
+						Location: b.M.BoatInfo[2], WeigthClass: b.M.BoatInfo[3],
+						Permission: strings.Split(b.M.BoatInfo[4], "\u0026")[0]}
+					//Add all bookings
+					for _, bb := range b.R {
+						if (bb.S == "B" || bb.S == "R") && bb.W > 0 {
+							bbb := BoatElementBookingStruct{Type: bb.S,
+								EpochStart:  epochStart + int64((bb.X/pixelToMin)*(15*60)),
+								EpochEnd:    epochStart + int64((bb.X+bb.W)/pixelToMin)*(15*60),
+								Duration:    int64(bb.W/pixelToMin) * 15,
+								BookingId:   bb.ID,
+								BookingInfo: bb.U,
+							}
+							//Add the booking
+							bc.Bookings = append(bc.Bookings, bbb)
+						}
+					}
+					//Save it to the boats list
+					boats = append(boats, bc)
+					blist = append(blist, bname)
+				}
+				json_to_file, _ := json.Marshal(boats)
+				mutex.Lock()
+				if book != nil {
+					err = ioutil.WriteFile(boatFile, json_to_file, 0755)
+				}
+				json_to_file, _ = json.Marshal(blist)
+				err = ioutil.WriteFile(boatNameFile, json_to_file, 0755)
+				mutex.Unlock()
+
+			}
+			if err != nil {
+				log.Error("Boat list error", err)
+			}
+		}
+		return blist, boats
 	}
 
-	file, err := ioutil.ReadFile(boatFile)
+	file, err := ioutil.ReadFile(boatNameFile)
 	if err != nil {
 		log.Error(err)
 	} else {
-		err = json.Unmarshal(file, &b)
+		err = json.Unmarshal(file, &blist)
 		if err != nil {
 			log.Error(err)
 		}
 	}
-	return b
+	file, err = ioutil.ReadFile(boatFile)
+	if err == nil {
+		err = json.Unmarshal(file, &boats)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return blist, boats
 }
 
 //Read the  user info
@@ -1080,7 +1030,9 @@ func writeWhatsAppJson(data []WhatsAppToInterface) {
 //Read the  group info
 func readTeamJson() []TeamInterface {
 	var b []TeamInterface
-	b = append(b, TeamInterface{Id: 0, Admin: true, Team: jsonTeam, Password: jsonPwd, Title: title, Prefix: commentPrefix, Planner: false})
+	if jsonProtect {
+		b = append(b, TeamInterface{Id: 0, Admin: true, Team: jsonTeam, Password: jsonPwd, Title: title, Prefix: commentPrefix, Planner: false})
+	}
 	if _, err := os.Stat(teamFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
@@ -1176,11 +1128,12 @@ func writeBookingJson(data BookingSlice) {
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].State == "Delete" {
 			log.WithFields(log.Fields{
-				"state": data[i].State,
-				"boat":  data[i].Name,
-				"user":  data[i].Username,
-				"at":    shortDate(data[i].Date),
-				"from":  shortTime(data[i].Time),
+				"state":    data[i].State,
+				"boat":     data[i].Name,
+				"fallback": data[i].Fallback,
+				"user":     data[i].Username,
+				"at":       shortDate(data[i].Date),
+				"from":     shortTime(data[i].Time),
 			}).Info("Deleting")
 			data = append(data[:i], data[i+1:]...)
 		}
@@ -1197,97 +1150,10 @@ func writeBookingJson(data BookingSlice) {
 
 //Function where al checks are done for a single booking and make the booking
 func doBooking(b *BookingInterface) (changed bool, err error) {
-	loc, _ := time.LoadLocation(timeZoneLoc)
-	//Step 2a: Check if we have a booking for the requested boat date and time
-	for _, bb := range *b.Bookings { //Array element 5 is the boat name
 
-		if strings.Contains(strings.ToLower(bb[5]), strings.ToLower(b.Name)) &&
-			bb[1] == shortDate(b.Date) {
-
-			//Check if we should cancel the boot
-			if b.State == "Cancel" {
-				err = boatCancel(b)
-				return true, err
-			}
-
-			//Convert the current start end times to Epoch
-			times := strings.Fields(bb[2]) //10:00 - 12:00
-			thetime, _ := time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[0]+":00"+b.TimeZone)
-			startTime := thetime.Unix()
-			thetime, _ = time.Parse(time.RFC3339, shortDate(b.Date)+"T"+times[2]+":00"+b.TimeZone)
-			endTime := thetime.Unix()
-			//Check if the booking contains the booking id we created
-			if len(bb) < 7 || b.BookingId != bb[0] {
-				//Check if there is a blockage
-				if (b.EpochStart >= startTime && b.EpochStart < endTime) ||
-					(b.EpochEnd >= startTime && b.EpochEnd < endTime) {
-					if b.State == "Blocked" {
-						return false, err
-					}
-					if b.State == "Moving" {
-						log.WithFields(log.Fields{
-							"state": b.State,
-							"boat":  b.Name,
-							"user":  b.Username,
-							"at":    shortDate(b.Date),
-							"from":  shortTime(b.Time),
-						}).Info("Canceled because of blocked")
-						err = boatCancel(b)
-					}
-					b.State = "Blocked"
-					b.Message = "booking blocked by " + bb[3]
-					b.BookingId = ""
-					return true, err
-				}
-				//Skip to next boat because we are not looking for this one
-				continue
-			}
-			//Boat is ours
-			b.BookingId = bb[0]
-
-			//Check if we should move this boat
-			if b.EpochStart == startTime && b.EpochEnd == endTime {
-				//Boat is on correct time and duration
-				return false, nil
-			}
-
-			//Find out the minTime and maxTime we our allowed to move the boat for the given day
-			boatList, err := boatSearch(b)
-			if err != nil {
-				return false, err
-			}
-
-			newEndTime := MinInt64(boatList.EpochEnd, b.EpochEnd)
-			newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-int64(minDuration)*60))
-			newStartTime = MaxInt64(newStartTime, boatList.SunRise)
-			//log.Debug("Epoch", startTime, newStartTime, endTime, newEndTime, b.EpochStart, b.EpochEnd, boatList.EpochStart, boatList.EpochEnd, boatList.SunRise, boatList.SunSet, bb)
-
-			//Check if their is a reason to update the booking
-
-			if newStartTime > startTime || newEndTime > endTime {
-				err = boatUpdate(b, newStartTime, newEndTime)
-				if err != nil {
-					b.State = "Retry"
-				} else {
-					b.Message = "At:" + time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
-					if b.EpochStart == newStartTime && b.EpochEnd == newEndTime {
-						b.State = "Finished"
-					} else {
-						b.State = "Moving"
-					}
-					b.Retry = 0
-				}
-				return true, err
-			}
-			//We found the boat but not updated it on it so we continue
-			return false, nil
-		}
-	}
-
-	//Check if we should just cancel the book which is not yet their
+	//Check thif booking should be canceled
 	if b.State == "Cancel" {
-		b.State = "Canceled"
-		return true, nil
+		return true, boatCancel(b)
 	}
 
 	//Check if we should mark record for removal, after 12 hours
@@ -1305,106 +1171,174 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		return true, nil
 	}
 
-	//Step 2b: When there is no booking, check if we are allowed to add it
-	boatList, err := boatSearch(b)
-	if err != nil {
-		b.State = "Failed"
-		return true, err
-	}
+	//Create local time zone for printing
+	loc, _ := time.LoadLocation(timeZoneLoc)
 
-	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
-	//Check if we have a boatList for the correct day, if not exit it
-	if boatList.EpochDate < b.EpochDate {
-		b.Message = "Date not valid yet"
-		b.State = "Waiting"
-		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
-		return true, nil
-	}
+	//Check if we have a booking for the requested boat date and time
+	for _, bs := range *b.Boats { //Find the boat in the BoatsList
+		if strings.Contains(strings.ToLower(bs.Name), strings.ToLower(b.Name)) {
+			var bookFrom int64 = b.EpochDate //EpochData is good enough for Sunrise
+			var bookTo int64 = b.EpochEnd    //EpochEnd is good enough for Sunset
+			//Find the allowed sunset and sunrise for the given date of booking by going through de blocks
+			for _, bb := range bs.Bookings { //Find the bookings of the boot
+				//Check all blocked area's for booking data to find allowed bookings window
+				if bb.Type == "B" &&
+					(time.Unix(bb.EpochStart, 0).Truncate(24*time.Hour).Unix() == b.EpochDate ||
+						time.Unix(bb.EpochEnd, 0).Truncate(24*time.Hour).Unix() == b.EpochDate) {
+					//We have a block for the requested booking day, calculate from and to
+					if bb.EpochEnd >= bookFrom && bb.EpochEnd <= bookTo {
+						bookFrom = MaxInt64(bookFrom, bb.EpochEnd)
+					}
+					if bb.EpochStart <= bookTo && bb.EpochStart >= bookFrom {
+						bookTo = MinInt64(bookFrom, bb.EpochStart)
+					}
+				}
 
-	//Check if we would be allowed booking, we need to be after Sunrise
-	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < boatList.SunRise {
-		b.Message = "Starttime before Sunrise"
-		b.State = "Waiting"
-		b.EpochNext = time.Unix(boatList.SunRise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
-		return true, nil
-	}
+			}
+			log.Debug("Date ", b.EpochDate, " SunRise ", bookFrom, " SunSet ", bookTo)
 
-	//Calculate the minimal start and end time
-	endtime := MinInt64(boatList.EpochEnd, b.EpochEnd)
-	starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
-	starttime = MaxInt64(starttime, boatList.SunRise)
+			//Check if there is a reservation the could block us
+			for _, bb := range bs.Bookings { //Find the bookings of the boot
+				//Check if the booking contains the booking id we created
+				if b.BookingId != bb.BookingId && bb.Type == "R" {
+					//Check if there is a blockage
+					if (b.EpochStart >= bb.EpochStart && b.EpochStart < bb.EpochEnd) ||
+						(b.EpochEnd >= bb.EpochStart && b.EpochEnd < bb.EpochEnd) {
+						if b.State == "Blocked" {
+							return false, err
+						}
+						if b.State == "Moving" {
+							log.WithFields(log.Fields{
+								"state": b.State,
+								"boat":  b.Name,
+								"user":  b.Username,
+								"at":    shortDate(b.Date),
+								"from":  shortTime(b.Time),
+							}).Info("Canceled because of blocked by " + bb.BookingInfo)
+							err = boatCancel(b)
+						}
+						if b.Fallback != "" {
+							b.Name = b.Fallback
+							b.Fallback = ""
+							b.State = "Retry"
+							b.EpochNext = 0
+							b.Message = "booking blocked by " + bb.BookingInfo + " using fallback " + b.Name
+						} else {
+							b.State = "Blocked"
+							b.Message = "booking blocked by " + bb.BookingInfo
+						}
+						b.BookingId = 0
+						return true, err
+					}
+					//Skip to next boat because we are not looking for this one
+					continue
+				}
+			}
 
-	//Check if we are allowed to book this
-	if endtime-starttime < int64(minDuration*60) {
-		b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
-		b.State = "Waiting"
-		b.EpochNext = time.Now().Unix() - (endtime - starttime)
-		return true, nil
-	}
+			//Check if there is exiting booking from us we should move
+			for _, bb := range bs.Bookings { //Find the bookings of the boot
+				//This should be our boat booking update it
+				if b.BookingId != 0 && b.BookingId == bb.BookingId && bb.Type == "R" {
 
-	//Load the boatList for the need time
-	boatList, err = boatSearchByTime(b, starttime)
-	if err != nil {
-		return false, err
-	}
+					if b.EpochStart == bb.EpochStart && b.EpochEnd == bb.EpochEnd {
+						//Boat is on correct time and duration skip it
+						return false, nil
+					}
 
-	//Issue when selection all boot
+					//Calculate the new booking times
+					newEndTime := MinInt64(bookTo, b.EpochEnd)
+					newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-int64(minDuration)*60))
+					newStartTime = MaxInt64(newStartTime, bookFrom)
 
-	//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
-	//Check if the boot is available requested period
-	for _, bb := range *boatList.Boats { //Array element 2 is the boat name
-		if strings.Contains(strings.ToLower(bb[2]), strings.ToLower(b.Name)) {
-			//Book the boat id is element 0
-			b.BoatId = bb[0]
+					//Check if their is a reason to update the booking
+					if newStartTime > bb.EpochStart || newEndTime > bb.EpochEnd {
+						err = boatUpdate(b, newStartTime, newEndTime)
+						if err != nil {
+							b.State = "Retry"
+						} else {
+							if b.EpochStart == newStartTime && b.EpochEnd == newEndTime {
+								b.State = "Finished"
+							} else {
+								b.State = "Moving"
+							}
+							b.Message = b.State + ":" + time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
+							b.Retry = 0
+						}
+						return true, err
+					}
+					//We found the boat but not updated it on it so we exit
+					return false, nil
+				}
+			}
+
+			//We did not found our booking, check if we are allowed to add it
+
+			//Check if there is a time slot to book
+			if time.Unix(bookFrom, 0).Truncate(24*time.Hour).Unix() <= b.EpochDate {
+				b.Message = "Date not valid yet"
+				b.State = "Waiting"
+				b.EpochNext = time.Unix(bookFrom, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
+				return true, nil
+			}
+
+			//Check if we would be allowed booking, we need to be after Sunrise
+			if time.Unix(bookTo, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < bookFrom {
+				b.Message = "Starttime not valid yet"
+				b.State = "Waiting"
+				b.EpochNext = time.Unix(bookFrom, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
+				return true, nil
+			}
+
+			//Calculate the minimal start and end time
+			endtime := MinInt64(bookTo, b.EpochEnd)
+			starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
+			starttime = MaxInt64(starttime, bookFrom)
+
+			//Check if we are allowed to book this
+			if endtime-starttime < int64(minDuration*60) {
+				b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
+				b.State = "Waiting"
+				b.EpochNext = time.Now().Unix() - (endtime - starttime)
+				return true, nil
+			}
+
+			//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
+			b.BoatId = strconv.Itoa(bs.Id)
 			err := boatBook(b, starttime, endtime)
 			if err == nil {
 				loc, _ := time.LoadLocation(timeZoneLoc)
-				b.Message = "At:" + time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
 				if b.EpochStart == starttime && b.EpochEnd == endtime {
 					b.State = "Finished"
 				} else {
 					b.State = "Moving"
 				}
+				b.Message = b.State + ":" + time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
 				b.Retry = 0
+			} else if b.Fallback != "" {
+				b.Name = b.Fallback
+				b.Fallback = ""
+				b.State = "Retry"
+				b.EpochNext = 0
+				b.Message = "Booking failed using fallback " + b.Name
+			} else {
+				b.State = "Failed"
+				b.Message = "Boat not bookable"
 			}
 			return true, err
-		}
-	}
-
-	// Stop Retry after the boat.EpochEnd is lager than b.EpochEnd --> Failed
-	if boatList.EpochEnd > b.EpochEnd {
-		b.State = "Failed"
-		b.Message = "Boat not bookable"
-		return true, err
-	}
-
-	//Do a fast retry for 60 seconds
-	if time.Unix(boatList.EpochEnd, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < (boatList.SunRise + 60) {
-		b.Message = "Fast Retry"
-		b.State = "Waiting"
-		b.EpochNext = 0
-		return true, nil
-	}
+		} //If boat found
+	} //Loop all Boats
 
 	//Boat not found in the list
 	log.WithFields(log.Fields{
-		"state":              b.State,
-		"boat":               b.Name,
-		"user":               b.Username,
-		"at":                 shortDate(b.Date),
-		"from":               shortTime(b.Time),
-		"starttime":          starttime,
-		"endtime":            endtime,
-		"boatlistSunRise":    boatList.SunRise,
-		"boatlistEpochDate":  boatList.EpochDate,
-		"boatlistEpochStart": boatList.EpochStart,
-		"boatlistEpochEnd":   boatList.EpochEnd,
-		"boats":              *boatList.Boats,
+		"state": b.State,
+		"boat":  b.Name,
+		"user":  b.Username,
+		"at":    shortDate(b.Date),
+		"from":  shortTime(b.Time),
+		"boats": b.Boats,
 	}).Info("Boat not found")
-	b.State = "Retry"
-	b.Message = "boat not found"
-	b.Retry++
-	b.EpochNext = time.Now().Unix() + (10 * int64(b.Retry)) // Retry in 10 Seconds mutliplied by the retry's
+	b.State = "Error"
+	b.Message = "Boat not found"
 	return true, err
 
 }
@@ -1440,6 +1374,7 @@ func bookLoop() {
 								"at":    shortDate(booking.Date),
 								"from":  shortTime(booking.Time),
 								"next":  shortTime(nextStr),
+								"unix":  time.Now().Unix(),
 							}).Error(err)
 						} else {
 							log.WithFields(log.Fields{
@@ -1449,6 +1384,7 @@ func bookLoop() {
 								"at":    shortDate(booking.Date),
 								"from":  shortTime(booking.Time),
 								"next":  shortTime(nextStr),
+								"unix":  time.Now().Unix(),
 							}).Info(booking.Message)
 						}
 					}
@@ -1458,7 +1394,7 @@ func bookLoop() {
 				booking.TimeZone = timeZone
 
 				//Set the correct EpochDatas
-				thetime, err := time.Parse(time.RFC3339, shortDate(booking.Date)+"T00:00:00"+booking.TimeZone)
+				thetime, err := time.Parse(time.RFC3339, shortDate(booking.Date)+"T00:00:00+00:00")
 				if err != nil {
 					log.Error("date not valid yyyy-MM-dd")
 					booking.State = "Failed"
@@ -1509,7 +1445,7 @@ func bookLoop() {
 						booking.State = "Repeat"
 						booking.Message = "Booking is repeated"
 						booking.Changed = true
-						booking.BookingId = ""
+						booking.BookingId = 0
 						rs := func(c bool) int {
 							if c {
 								return 1
@@ -1536,6 +1472,8 @@ func bookLoop() {
 					booking.Comment = shortTime(booking.Time) + " - " + thetime.Format("15:04")
 				}
 
+				// doBooking
+
 				//Step 1: Login
 				err = login(booking)
 				if err != nil {
@@ -1543,24 +1481,34 @@ func bookLoop() {
 					return
 				}
 
-				//Step 2: doBooking
+				//Step 2: Read all boat data if older than 60 seconds
+				_, boats := readBoatJson(booking, 60)
+				booking.Boats = &boats
+
+				//Step 3: Do the real Booking
 				booking.Changed, err = doBooking(booking)
 				if err != nil {
-					booking.Retry++
-					booking.State = "Error"
+					booking.State = "Failed"
 					booking.Message = err.Error()
 					booking.Changed = true
 				}
 
-				//Step 3: logout
+				//Step 4: Logout
 				logout(booking)
 
-				//Step 4: Call the defer and create logs if needed
+				//Step 5: On Changed append the message to the log
+				if booking.Changed {
+					booking.Logs = append(booking.Logs, booking.Message)
+				}
+
 			}(&bookingSlice[i], &changed, &wg)
 		}
+
+		//Wait for all bookings to have finished
 		wg.Wait()
 		//Save the change to the bookingFile on changed data
 		if changed {
+
 			writeBookingJson(bookingSlice)
 			//Check if we should send a whatsapp message
 			if whatsApp {
@@ -1744,8 +1692,8 @@ func jsonServer() error {
 
 	//Protected requests
 	g.GET("/boat", func(c echo.Context) error {
-		boats := readBoatJson()
-		return c.JSON(http.StatusOK, boats)
+		boatNames, _ := readBoatJson(nil, 24*60*60)
+		return c.JSON(http.StatusOK, boatNames)
 	})
 
 	//Protected requests
@@ -2524,13 +2472,19 @@ func main() {
 		}
 	} else {
 		switch test {
-		case "login_response":
-			file, _ := ioutil.ReadFile("html/login-response.html")
-			str := string(file)
-			log.Info("login_response", readbookingList(&str))
 		case "boatlist":
-			os.Remove(boatFile)
-			log.Info("BoatList", readBoatJson())
+			names, boats := readBoatJson(nil, 0)
+			log.Info("BoatList", names, boats)
+		case "regexp":
+			b, _ := os.ReadFile("test.html")
+			re := regexp.MustCompile(`ReservationId = (.*) `)
+			rem := re.FindStringSubmatch(string(b))
+			var BookingId int64
+			if len(rem) > 0 {
+
+				BookingId, _ = strconv.ParseInt(strings.Trim(rem[1], " "), 10, 64)
+			}
+			log.Info("ID ", BookingId)
 		default:
 			bookLoop()
 		}

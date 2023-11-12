@@ -17,10 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixtime zone during winter/summer
 - Add option to show de log belonging to a booking
 
+- Fix issue to use correct start date
+- Logging laat niet de namen zien van de gebruikers in de boatList
+
 ## [Development]
 ### Added
 ### Changed
 ### Removed
+
+## [0.7.0]
+- Fixed issued with login, when not using commandline parameters
+- Fixed issue with timezone logging
+- Added Fallback
+- Updated Go version
+- Disabled confirmation by default, not working yet
+- Moved fully to GUI client
 
 ## [0.6.2]
 ### Added
