@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -166,7 +167,7 @@ type BoatElementBookingStruct struct {
 	EpochStart  int64  `json:"start"`    //Start + (x/12)*15
 	EpochEnd    int64  `json:"end"`      //Start +(x+w)/12*15
 	Duration    int64  `json:"duration"` //(x+w)/12 in min
-	BookingId   int64  `json:"bookingId,omitempty"`
+	BookingId   string `json:"bookingId,omitempty"`
 	BookingInfo string `json:"bookingInfo,omitempty"`
 }
 
@@ -201,13 +202,15 @@ type BookingInterface struct {
 	Comment       string          `db:"comment" json:"comment"`
 	Repeat        RepeatType      `db:"repeat" json:"repeat,omitempty"`
 	State         string          `db:"state" json:"state,omitempty"`
-	BookingId     int64           `db:"bookingid" json:"bookingid,omitempty"`
+	BookingId     string          `db:"bookingid" json:"bookingid,omitempty"`
 	BoatId        string          `db:"boatid" json:"boatid,omitempty"`
 	Message       string          `db:"message" json:"message,omitempty"`
 	EpochNext     int64           `db:"epochnext" json:"next,omitempty"`
 	Retry         int             `db:"retrycounter" json:"retry,omitempty"`
 	UserComment   bool            `db:"usercomment" json:"usercomment"`
 	WhatsAppTo    string          `db:"whatsapp" json:"whatsapp,omitempty"`
+	BookStart     int64           `db:"bookstart" json:"bookstart,omitempty"`
+	BookDur       int64           `db:"bookdur" json:"bookdur,omitempty"`
 	Logs          LogListStruct   `db:"logs" json:"logs,omitempty"`
 	TimeZone      string          `db:"-" json:"-"`
 	Boats         *BoatListStruct `db:"-" json:"-"`
@@ -638,9 +641,9 @@ func boatCancel(booking *BookingInterface) error {
 	values.Set("a", "e")
 	values.Set("menu", "Omenu")
 	values.Set("extrainfo", "mid="+booking.BoatId+
-		"&co=0&rid="+strconv.FormatInt(booking.BookingId, 10)+
-		"&from="+strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10)+
-		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0&user="+strconv.FormatInt(booking.UserId, 10))
+		"&co=0&rid="+booking.BookingId+
+		"&from="+strconv.FormatInt(int64((booking.BookStart-booking.GuiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(booking.BookDur/15), 10)+"&rec=0&user="+strconv.FormatInt(booking.UserId, 10))
 	request.URL.RawQuery = values.Encode()
 	for _, o := range booking.Cookies {
 		request.AddCookie(o)
@@ -660,8 +663,8 @@ func boatCancel(booking *BookingInterface) error {
 
 	//Step 2: Login to the reference
 	data := url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart+booking.Duration*60)/(15*60)), 10))
+	data.Set("newStart", strconv.FormatInt(int64((booking.BookStart-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((booking.BookStart-booking.GuiEpochStart+booking.BookDur*60)/(15*60)), 10))
 	//	data.Set("clubcode", "")
 	//	data.Set("username", booking.Username)
 	//	data.Set("password", booking.Password)
@@ -681,6 +684,8 @@ func boatCancel(booking *BookingInterface) error {
 	}
 
 	booking.State = "Canceled"
+	booking.BookDur = 0
+	booking.BookStart = 0
 	return err
 }
 
@@ -693,7 +698,7 @@ func confirmBoat(booking *BookingInterface) error {
 //Update a boat booking start and end time
 func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
 	//STEP: Session
-	booking.BookingId = 0
+	booking.BookingId = ""
 
 	//STEP: Create Reference to the booking
 	request, err := http.NewRequest(http.MethodGet, guiUrl, nil)
@@ -701,8 +706,8 @@ func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
 	values.Set("a", "e")
 	values.Set("menu", "Amenu")
 	values.Set("extrainfo", "mid="+booking.BoatId+
-		"&from="+strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10)+
-		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10))
+		"&from="+strconv.FormatInt(int64((startTime-booking.GuiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(((endTime-startTime)/60)/15), 10))
 	request.URL.RawQuery = values.Encode()
 	for _, o := range booking.Cookies {
 		request.AddCookie(o)
@@ -722,8 +727,8 @@ func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
 
 	//Step 2: Login to the reference
 	data := url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart+booking.Duration*60)/(15*60)), 10))
+	data.Set("newStart", strconv.FormatInt(int64((startTime-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((endTime-booking.GuiEpochStart)/(15*60)), 10))
 	team, err := getTeamByName(booking.Team)
 	c := cif(err == nil, iif(team.Prefix, commentPrefix), commentPrefix) + booking.Comment
 	if c != "" {
@@ -751,11 +756,14 @@ func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
 	re := regexp.MustCompile(`ReservationId = (.*) `)
 	rem := re.FindStringSubmatch(string(b))
 	if len(rem) > 0 {
-		booking.BookingId, _ = strconv.ParseInt(strings.Trim(rem[1], " "), 10, 64)
+		booking.BookingId = strings.Trim(rem[1], " ")
 	}
-	if booking.BookingId == 0 {
+	if booking.BookingId == "" {
 		return errors.New("Failed to create reservation")
 	}
+	//Save the real booking start and duration
+	booking.BookDur = (endTime - startTime) / 60
+	booking.BookStart = startTime
 	return nil
 }
 
@@ -768,9 +776,9 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	values.Set("a", "e")
 	values.Set("menu", "Rmenu")
 	values.Set("extrainfo", "mid="+booking.BoatId+
-		"&co=0&rid="+strconv.FormatInt(booking.BookingId, 10)+
-		"&from="+strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10)+
-		"&dur="+strconv.FormatInt(int64(booking.Duration/15), 10)+"&rec=0")
+		"&co=0&rid="+booking.BookingId+
+		"&from="+strconv.FormatInt(int64((startTime-booking.GuiEpochStart)/(15*60)), 10)+
+		"&dur="+strconv.FormatInt(int64(((startTime-endTime)/60)/15), 10)+"&rec=0")
 	request.URL.RawQuery = values.Encode()
 	for _, o := range booking.Cookies {
 		request.AddCookie(o)
@@ -790,8 +798,8 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 
 	//Step 2: Login to the reference
 	data := url.Values{}
-	data.Set("newStart", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart)/(15*60)), 10))
-	data.Set("newEnd", strconv.FormatInt(int64((booking.EpochStart-booking.GuiEpochStart+booking.Duration*60)/(15*60)), 10))
+	data.Set("newStart", strconv.FormatInt(int64((startTime-booking.GuiEpochStart)/(15*60)), 10))
+	data.Set("newEnd", strconv.FormatInt(int64((endTime-booking.GuiEpochStart)/(15*60)), 10))
 	data.Set("clubcode", "")
 	data.Set("username", booking.Username)
 	data.Set("password", booking.Password)
@@ -836,6 +844,9 @@ func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error
 	if !(response.StatusCode >= 200 && response.StatusCode <= 299) {
 		return errors.New("HTTP Status is out of the 2xx range")
 	}
+	//Save the real booking start and duration
+	booking.BookDur = (endTime - startTime) / 60
+	booking.BookStart = startTime
 	return nil
 }
 
@@ -924,7 +935,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 					U  string  `json:"u"`
 					O  int     `json:"o"`
 					C  string  `json:"c"`
-					ID int64   `json:"id"`
+					ID string  `json:"id"`
 				} `json:"r"`
 			}
 			webboats := BoatStruct{}
@@ -946,7 +957,9 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 					//Add all bookings
 					for _, bb := range b.R {
 						if (bb.S == "B" || bb.S == "R") && bb.W > 0 {
-							bbb := BoatElementBookingStruct{Type: bb.S,
+							//The color code indicaties a window not available
+							bbb := BoatElementBookingStruct{
+								Type:        cif(bb.C == "#404040", "N", cif(bb.I == -1, "S", bb.S)),
 								EpochStart:  epochStart + int64((bb.X/pixelToMin)*(15*60)),
 								EpochEnd:    epochStart + int64((bb.X+bb.W)/pixelToMin)*(15*60),
 								Duration:    int64(bb.W/pixelToMin) * 15,
@@ -1175,31 +1188,52 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		return true, nil
 	}
 
+	//Check if we have a blocked item and a fallback is set
+	if b.State == "Blocked" {
+		if b.Fallback != "" {
+			b.Message = "using fallback " + b.Fallback + " for boat " + b.Name
+			b.Name = b.Fallback
+			b.Fallback = ""
+			b.State = "Retry"
+			return true, nil
+		} else {
+			b.State = "Failed"
+			return true, err
+		}
+	}
+
 	//Create local time zone for printing
 	loc, _ := time.LoadLocation(timeZoneLoc)
 
 	//Check if we have a booking for the requested boat date and time
 	for _, bs := range *b.Boats { //Find the boat in the BoatsList
 		if strings.Contains(strings.ToLower(bs.Name), strings.ToLower(b.Name)) {
-			var bookFrom int64 = b.EpochDate //EpochData is good enough for Sunrise
-			var bookTo int64 = b.EpochEnd    //EpochEnd is good enough for Sunset
+			var sunrise int64 = 0            //EpochData is good enough for Sunrise
+			var sunset int64 = math.MaxInt64 //EpochEnd is good enough for Sunset
 			//Find the allowed sunset and sunrise for the given date of booking by going through de blocks
 			for _, bb := range bs.Bookings { //Find the bookings of the boot
-				//Check all blocked area's for booking data to find allowed bookings window
-				if bb.Type == "B" &&
-					(time.Unix(bb.EpochStart, 0).Truncate(24*time.Hour).Unix() == b.EpochDate ||
-						time.Unix(bb.EpochEnd, 0).Truncate(24*time.Hour).Unix() == b.EpochDate) {
-					//We have a block for the requested booking day, calculate from and to
-					if bb.EpochEnd >= bookFrom && bb.EpochEnd <= bookTo {
-						bookFrom = MaxInt64(bookFrom, bb.EpochEnd)
+				//Check all sunset blocked area's for booking data to find allowed bookings window
+				if bb.Type == "S" {
+					if bb.EpochStart > b.EpochStart {
+						sunset = MinInt64(sunset, bb.EpochStart)
 					}
-					if bb.EpochStart <= bookTo && bb.EpochStart >= bookFrom {
-						bookTo = MinInt64(bookFrom, bb.EpochStart)
+					if bb.EpochEnd < b.EpochStart {
+						sunrise = MaxInt64(sunrise, bb.EpochEnd)
 					}
+					//log.Info("S ", b.EpochDate, " SunRise ", sunrise, " SunSet ", sunset, " Start ", bb.EpochStart, " End ", bb.EpochEnd)
 				}
-
+				//Not Available area, if sunrise
+				if bb.Type == "N" {
+					if bb.EpochStart < sunset {
+						sunset = bb.EpochStart
+					}
+					if bb.EpochStart < sunrise {
+						sunrise = 0
+					}
+					//log.Info("N ", b.EpochDate, " SunRise ", sunrise, " SunSet ", sunset, " Start ", bb.EpochStart, " End ", bb.EpochEnd)
+				}
 			}
-			log.Debug("Date ", b.EpochDate, " SunRise ", bookFrom, " SunSet ", bookTo)
+			log.Debug("Date ", b.EpochDate, " SunRise ", sunrise, " SunSet ", sunset)
 
 			//Check if there is a reservation the could block us
 			for _, bb := range bs.Bookings { //Find the bookings of the boot
@@ -1208,9 +1242,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					//Check if there is a blockage
 					if (b.EpochStart >= bb.EpochStart && b.EpochStart < bb.EpochEnd) ||
 						(b.EpochEnd >= bb.EpochStart && b.EpochEnd < bb.EpochEnd) {
-						if b.State == "Blocked" {
-							return false, err
-						}
 						if b.State == "Moving" {
 							log.WithFields(log.Fields{
 								"state": b.State,
@@ -1221,17 +1252,9 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 							}).Info("Canceled because of blocked by " + bb.BookingInfo)
 							err = boatCancel(b)
 						}
-						if b.Fallback != "" {
-							b.Name = b.Fallback
-							b.Fallback = ""
-							b.State = "Retry"
-							b.EpochNext = 0
-							b.Message = "booking blocked by " + bb.BookingInfo + " using fallback " + b.Name
-						} else {
-							b.State = "Blocked"
-							b.Message = "booking blocked by " + bb.BookingInfo
-						}
-						b.BookingId = 0
+						b.State = "Blocked"
+						b.Message = "booking blocked by " + bb.BookingInfo
+						b.BookingId = ""
 						return true, err
 					}
 					//Skip to next boat because we are not looking for this one
@@ -1239,33 +1262,56 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 			}
 
+			//Check if there is a timeslot for book
+			if sunrise == 0 || sunset == math.MaxInt64 {
+				b.Message = "Date not valid yet"
+				b.State = "Waiting"
+				b.EpochNext = time.Unix(b.EpochDate, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
+				return true, nil
+			}
+
+			//Check if we would be allowed booking, we need to be after Sunrise
+			if time.Unix(sunset, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < sunrise {
+				b.Message = "Starttime not valid yet"
+				b.State = "Waiting"
+				b.EpochNext = time.Unix(sunrise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
+				return true, nil
+			}
+
+			//Calculate the minimal start and end time
+			endtime := MinInt64(sunset, b.EpochEnd)
+			starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
+			starttime = MaxInt64(starttime, sunrise)
+
+			//Check if we are allowed to book this based on minimal duration
+			if endtime-starttime < int64(minDuration*60) {
+				b.Message = "Available duration, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
+				b.State = "Waiting"
+				b.EpochNext = time.Now().Unix() - (endtime - starttime)
+				return true, nil
+			}
+
 			//Check if there is exiting booking from us we should move
 			for _, bb := range bs.Bookings { //Find the bookings of the boot
 				//This should be our boat booking update it
-				if b.BookingId != 0 && b.BookingId == bb.BookingId && bb.Type == "R" {
-
+				if b.BookingId != "" && b.BookingId == bb.BookingId && bb.Type == "R" {
 					if b.EpochStart == bb.EpochStart && b.EpochEnd == bb.EpochEnd {
 						//Boat is on correct time and duration skip it
 						return false, nil
 					}
 
-					//Calculate the new booking times
-					newEndTime := MinInt64(bookTo, b.EpochEnd)
-					newStartTime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, newEndTime-int64(minDuration)*60))
-					newStartTime = MaxInt64(newStartTime, bookFrom)
-
 					//Check if their is a reason to update the booking
-					if newStartTime > bb.EpochStart || newEndTime > bb.EpochEnd {
-						err = boatUpdate(b, newStartTime, newEndTime)
+					if starttime > bb.EpochStart || endtime > bb.EpochEnd {
+						err = boatUpdate(b, starttime, endtime)
 						if err != nil {
-							b.State = "Retry"
+							b.State = "Blocked" //Try fallback to do
 						} else {
-							if b.EpochStart == newStartTime && b.EpochEnd == newEndTime {
+							if b.EpochStart == starttime && b.EpochEnd == endtime {
 								b.State = "Finished"
 							} else {
 								b.State = "Moving"
 							}
-							b.Message = b.State + ":" + time.Unix(newStartTime, 0).In(loc).Format("15:04") + " - " + time.Unix(newEndTime, 0).In(loc).Format("15:04")
+							b.Message = b.State + ":" + time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
 							b.Retry = 0
 						}
 						return true, err
@@ -1275,41 +1321,10 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 			}
 
-			//We did not found our booking, check if we are allowed to add it
-
-			//Check if there is a time slot to book
-			if time.Unix(bookFrom, 0).Truncate(24*time.Hour).Unix() <= b.EpochDate {
-				b.Message = "Date not valid yet"
-				b.State = "Waiting"
-				b.EpochNext = time.Unix(bookFrom, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
-				return true, nil
-			}
-
-			//Check if we would be allowed booking, we need to be after Sunrise
-			if time.Unix(bookTo, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < bookFrom {
-				b.Message = "Starttime not valid yet"
-				b.State = "Waiting"
-				b.EpochNext = time.Unix(bookFrom, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
-				return true, nil
-			}
-
-			//Calculate the minimal start and end time
-			endtime := MinInt64(bookTo, b.EpochEnd)
-			starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
-			starttime = MaxInt64(starttime, bookFrom)
-
-			//Check if we are allowed to book this
-			if endtime-starttime < int64(minDuration*60) {
-				b.Message = "Time between start and end, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
-				b.State = "Waiting"
-				b.EpochNext = time.Now().Unix() - (endtime - starttime)
-				return true, nil
-			}
-
-			//log.Println(boatList.EpochDate, boatList.EpochStart, boatList.EpochEnd, *boatList.Boats)
+			//Get the boat ID and start the booking process
 			b.BoatId = strconv.Itoa(bs.Id)
 			err := boatBook(b, starttime, endtime)
-			if err == nil {
+			if err == nil { //We found the boat and could book it
 				loc, _ := time.LoadLocation(timeZoneLoc)
 				if b.EpochStart == starttime && b.EpochEnd == endtime {
 					b.State = "Finished"
@@ -1318,15 +1333,9 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 				b.Message = b.State + ":" + time.Unix(starttime, 0).In(loc).Format("15:04") + " - " + time.Unix(endtime, 0).In(loc).Format("15:04")
 				b.Retry = 0
-			} else if b.Fallback != "" {
-				b.Name = b.Fallback
-				b.Fallback = ""
-				b.State = "Retry"
-				b.EpochNext = 0
-				b.Message = "Booking failed using fallback " + b.Name
 			} else {
-				b.State = "Failed"
-				b.Message = "Boat not bookable"
+				b.State = "Blocked"
+				b.Message = "Boat not bookable " + b.Name
 			}
 			return true, err
 		} //If boat found
@@ -1341,8 +1350,8 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		"from":  shortTime(b.Time),
 		"boats": b.Boats,
 	}).Info("Boat not found")
-	b.State = "Error"
-	b.Message = "Boat not found"
+	b.State = "Blocked"
+	b.Message = "Boat not found " + b.Name
 	return true, err
 
 }
@@ -1353,7 +1362,7 @@ func bookLoop() {
 	var changed bool = false
 	//Timing loop
 	for {
-		//TODO: We should read it from file or json url
+		//Read de bookings
 		bookingSlice := readBookingJson()
 		wg := sync.WaitGroup{}
 		for i := range bookingSlice {
@@ -1366,8 +1375,12 @@ func bookLoop() {
 					//If data has been changed update the booking array
 					if booking.Changed {
 						*changed = true
-						//Sleep the booking for at least 15 min
-						booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
+						//Sleep the booking for at least 15 min, if we are not instructed to skip
+						if booking.State == "Blocked" || booking.State == "Retry" {
+							booking.EpochNext = 0 //On blocked or Retry Item we will not wait
+						} else if booking.EpochNext <= time.Now().Unix() {
+							booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
+						}
 						loc, _ := time.LoadLocation(timeZoneLoc)
 						nextStr := time.Unix(booking.EpochNext, 0).In(loc).Format("15:04")
 						if err != nil {
@@ -1397,6 +1410,16 @@ func bookLoop() {
 				//Set the timezone
 				booking.TimeZone = timeZone
 
+				//Correct the duration automaticly
+				//Set the minimal duration
+				if booking.Duration < int64(minDuration) {
+					booking.Duration = int64(minDuration)
+				}
+				//Set the maximal duration
+				if booking.Duration > int64(maxDuration) {
+					booking.Duration = int64(maxDuration)
+				}
+
 				//Set the correct EpochDatas
 				thetime, err := time.Parse(time.RFC3339, shortDate(booking.Date)+"T00:00:00+00:00")
 				if err != nil {
@@ -1416,15 +1439,7 @@ func bookLoop() {
 					return
 				}
 
-				//Set the minimal duration
-				if booking.Duration < int64(minDuration) {
-					booking.Duration = int64(minDuration)
-				}
-				//Set the maximal duration
-				if booking.Duration > int64(maxDuration) {
-					booking.Duration = int64(maxDuration)
-				}
-
+				//Save the real start time and end time of booking
 				booking.EpochStart = thetime.Unix()
 				thetime = thetime.Add(time.Minute * time.Duration(booking.Duration))
 				booking.EpochEnd = thetime.Unix()
@@ -1449,7 +1464,7 @@ func bookLoop() {
 						booking.State = "Repeat"
 						booking.Message = "Booking is repeated"
 						booking.Changed = true
-						booking.BookingId = 0
+						booking.BookingId = ""
 						rs := func(c bool) int {
 							if c {
 								return 1
@@ -1467,6 +1482,7 @@ func bookLoop() {
 						booking.Message = "Booking marked for Delete"
 						booking.Changed = true
 					}
+					//Nothing to do more with this booking
 					return
 				}
 
@@ -1900,7 +1916,7 @@ func jsonServer() error {
 		new_booking.Id = id
 		new_booking.State = ""
 		new_booking.Message = ""
-		new_booking.EpochNext = 0
+		new_booking.EpochNext = -1
 		new_booking.Team = cif(team.Admin, iif(new_booking.Team, team.Team), team.Team)
 		new_booking.UserComment = strings.Trim(new_booking.Comment, " ") != ""
 		new_booking.Logs = append(new_booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Created by GUI"})
