@@ -183,8 +183,9 @@ type BoatElementStruct struct {
 type BoatListStruct []BoatElementStruct
 
 type LogStruct struct {
-	Date int64  `json:"date"` // Date
-	Log  string `json:"log"`  //Log
+	Date  int64  `json:"date"`  // Date
+	State string `json:"state"` // State
+	Log   string `json:"log"`   //Log
 }
 type LogListStruct []LogStruct
 
@@ -1210,12 +1211,14 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 		if strings.Contains(strings.ToLower(bs.Name), strings.ToLower(b.Name)) {
 			var sunrise int64 = 0            //EpochData is good enough for Sunrise
 			var sunset int64 = math.MaxInt64 //EpochEnd is good enough for Sunset
+			var sunsetWindow int64 = sunset
 			//Find the allowed sunset and sunrise for the given date of booking by going through de blocks
 			for _, bb := range bs.Bookings { //Find the bookings of the boot
 				//Check all sunset blocked area's for booking data to find allowed bookings window
 				if bb.Type == "S" {
 					if bb.EpochStart > b.EpochStart {
 						sunset = MinInt64(sunset, bb.EpochStart)
+						sunsetWindow = sunset
 					}
 					if bb.EpochEnd < b.EpochStart {
 						sunrise = MaxInt64(sunrise, bb.EpochEnd)
@@ -1262,11 +1265,23 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 			}
 
+			//Calculate the minimal start and end time
+			endtime := MinInt64(sunset, b.EpochEnd)
+			starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
+			starttime = MaxInt64(starttime, sunrise)
+
 			//Check if there is a timeslot for book
 			if sunrise == 0 || sunset == math.MaxInt64 {
 				b.Message = "Date not valid yet"
 				b.State = "Waiting"
-				b.EpochNext = time.Unix(b.EpochDate, 0).Add(-(time.Duration(bookWindow)) * time.Hour).Truncate(15 * time.Minute).Unix()
+				b.EpochNext = time.Unix(starttime, 0).Truncate(15 * time.Minute).Unix()
+				return true, nil
+			}
+
+			//Check if we are not trying to book after sunset
+			if b.EpochEnd > sunsetWindow {
+				b.Message = "Booking beyond sunset not allowed"
+				b.State = "Failed"
 				return true, nil
 			}
 
@@ -1277,11 +1292,6 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				b.EpochNext = time.Unix(sunrise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
 				return true, nil
 			}
-
-			//Calculate the minimal start and end time
-			endtime := MinInt64(sunset, b.EpochEnd)
-			starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
-			starttime = MaxInt64(starttime, sunrise)
 
 			//Check if we are allowed to book this based on minimal duration
 			if endtime-starttime < int64(minDuration*60) {
@@ -1518,7 +1528,7 @@ func bookLoop() {
 
 				//Step 5: On Changed append the message to the log
 				if booking.Changed {
-					booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: booking.Message})
+					booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), State: booking.State, Log: booking.Message})
 				}
 
 			}(&bookingSlice[i], &changed, &wg)
@@ -1919,7 +1929,7 @@ func jsonServer() error {
 		new_booking.EpochNext = -1
 		new_booking.Team = cif(team.Admin, iif(new_booking.Team, team.Team), team.Team)
 		new_booking.UserComment = strings.Trim(new_booking.Comment, " ") != ""
-		new_booking.Logs = append(new_booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Created by GUI"})
+		new_booking.Logs = append(new_booking.Logs, LogStruct{Date: time.Now().Unix(), State: new_booking.State, Log: "Created by " + team.Title})
 
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Bad request.")
@@ -2053,7 +2063,7 @@ func jsonServer() error {
 				//Do whe have a updated using user comment
 				updated_booking.UserComment = booking.UserComment ||
 					booking.Comment != updated_booking.Comment
-				updated_booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Update by GUI"})
+				updated_booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), State: booking.State, Log: "Update by " + team.Title})
 
 				//Cancel a Boat when you update it, while it is finished
 				if (booking.State == "Finished" || booking.State == "Confirmed") &&
@@ -2095,10 +2105,9 @@ func jsonServer() error {
 					writeBookingJson(bookings)
 				} else if booking.State != "Cancel" {
 					booking.State = "Cancel"
-					booking.Message = "Canceled by user"
+					booking.Message = "Canceled"
 					booking.EpochNext = 0
-					booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Canceled by GUI"})
-
+					booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), State: booking.State, Log: "Canceled by " + team.Title})
 					bookings[i] = booking
 					writeBookingJson(bookings)
 				}

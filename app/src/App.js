@@ -957,14 +957,7 @@ export default function App() {
       {renderErrorList}
     </div>
   )
-
-  const formatLog = (l) => (
-    <div>
-    <div>{l.date} </div>
-    <div>{l.log} </div>
-    </div>
-  )
-
+  
   const renderBoat = (
     <div> 
       <Modal
@@ -1013,7 +1006,7 @@ export default function App() {
          detailPanel={rowData => {
           var out =""
           if (rowData.logs) {
-            rowData.logs.forEach((l)=>{out += "<div>"+(new Date(l.date * 1000)).toISOString()+" - " + l.log+"</div>" })
+            rowData.logs.forEach((l)=>{out += "<div>"+(new Date(l.date * 1000)).toISOString()+" ["+ l.state+ "] " + l.log+"</div>" })
           }
           return (
             <div
