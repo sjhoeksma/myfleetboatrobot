@@ -1,5 +1,7 @@
 package main
 
+//lint:file-ignore ST1005 Ignore message error should not be started with capital
+
 import (
 	"context"
 	"database/sql"
@@ -9,7 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
+
 	"math"
 	"net/http"
 	"net/url"
@@ -66,7 +68,7 @@ var logFile string                            //Should we log to file
 var whatsApp bool = true                      //Should we enable watchapp
 var planner bool = true                       //Should we enable planner
 
-//Used to map specify when to send a whatsapp message
+// Used to map specify when to send a whatsapp message
 var sendWhatsAppMsg = map[string]bool{
 	"Finished":  true,
 	"Blocked":   true,
@@ -82,25 +84,9 @@ var sendWhatsAppMsg = map[string]bool{
 	*/
 }
 
-//Used to convert months into date
-var maandFilter = map[string]string{
-	"januari":   "01",
-	"februari":  "02",
-	"maart":     "03",
-	"april":     "04",
-	"mei":       "05",
-	"juni":      "06",
-	"juli":      "07",
-	"augustus":  "08",
-	"september": "09",
-	"oktober":   "10",
-	"november":  "11",
-	"december":  "12",
-}
-
 type RepeatType int
 
-//Repeat 0=None, 1=Daily, 2=Weekly, 3=Monthly, 4=Yearly
+// Repeat 0=None, 1=Daily, 2=Weekly, 3=Monthly, 4=Yearly
 const (
 	None RepeatType = iota
 	Daily
@@ -109,7 +95,7 @@ const (
 	Yearly
 )
 
-//Struc used to store user info
+// Struc used to store user info
 type UserInterface struct {
 	Id       int64  `db:"id" json:"id"`
 	Team     string `db:"team" json:"team"`
@@ -125,7 +111,7 @@ type LoginInterface struct {
 	Status   string `db:"-" json:"status,omitempty"`
 }
 
-//Struc used to store user info
+// Struc used to store user info
 type WhatsAppToInterface struct {
 	Team     string `db:"team" json:"team"`
 	To       string `db:"msgto" json:"to"`
@@ -147,7 +133,7 @@ type TeamInterface struct {
 	Planner    bool   `db:"planner" json:"planner"`
 }
 
-//Used to store version info
+// Used to store version info
 type VersionInterface struct {
 	Version string `db:"version" json:"version"`
 }
@@ -189,7 +175,7 @@ type LogStruct struct {
 }
 type LogListStruct []LogStruct
 
-//Struc used to store boat and session info
+// Struc used to store boat and session info
 type BookingInterface struct {
 	Id            int64           `db:"id" json:"id"`
 	Team          string          `db:"team" json:"team"`
@@ -225,7 +211,7 @@ type BookingInterface struct {
 	UserId        int64           `db:"-" json:"-"`
 }
 
-//The list of bookings
+// The list of bookings
 type BookingSlice []BookingInterface
 
 var singleRun bool = false                //Should we do a single runonly = nowebserver
@@ -246,7 +232,7 @@ var db *sql.DB                            //The Database
 var whatsAppContainer *sqlstore.Container //The whatsapp datacontainer
 var dbType string = "sqlite3"             //The Database type
 
-//Simple iif function to select value
+// Simple iif function to select value
 func iif(a, b string) string {
 	if a == "" {
 		return b
@@ -255,7 +241,7 @@ func iif(a, b string) string {
 	}
 }
 
-//Simple conditional if function to select value
+// Simple conditional if function to select value
 func cif(c bool, a, b string) string {
 	if c {
 		return a
@@ -264,7 +250,7 @@ func cif(c bool, a, b string) string {
 	}
 }
 
-//Find min of 2 int64 values
+// Find min of 2 int64 values
 func MinInt64(a, b int64) int64 {
 	if a < b {
 		return a
@@ -272,7 +258,7 @@ func MinInt64(a, b int64) int64 {
 	return b
 }
 
-//Find max of 2 int64 values
+// Find max of 2 int64 values
 func MaxInt64(a, b int64) int64 {
 	if a > b {
 		return a
@@ -295,7 +281,7 @@ func sliceVersion(version string) [3]uint32 {
 	return si
 }
 
-//Function to get an ENV variable and put it into a string
+// Function to get an ENV variable and put it into a string
 func setEnvValue(key string, item *string) {
 	s := os.Getenv(key)
 	if s != "" {
@@ -303,7 +289,7 @@ func setEnvValue(key string, item *string) {
 	}
 }
 
-//Function to get an ENV variable and put it into a string
+// Function to get an ENV variable and put it into a string
 func setEnvBoolValue(key string, item *bool) {
 	s := os.Getenv(key)
 	if s != "" {
@@ -311,12 +297,12 @@ func setEnvBoolValue(key string, item *bool) {
 	}
 }
 
-//Make from a long date string a short one
+// Make from a long date string a short one
 func shortDate(date string) string {
 	return strings.Split(date, "T")[0]
 }
 
-//Make from a long data string as short time
+// Make from a long data string as short time
 func shortTime(timeS string) string {
 	if strings.Contains(timeS, "T") {
 		thetime, _ := time.Parse(time.RFC3339, timeS)
@@ -327,7 +313,7 @@ func shortTime(timeS string) string {
 	return thetime.Round(15 * time.Minute).Format("15:04")
 }
 
-//Function to filter out the valid teams from array
+// Function to filter out the valid teams from array
 func TeamFilter(arr interface{}, teamName string) interface{} {
 	contentType := reflect.TypeOf(arr)
 	contentValue := reflect.ValueOf(arr)
@@ -354,7 +340,7 @@ func TeamFilter(arr interface{}, teamName string) interface{} {
 func Upgrade() {
 	var v VersionInterface = VersionInterface{Version: AppVersion}
 	if _, err := os.Stat(versionFile); !errors.Is(err, os.ErrNotExist) {
-		file, _ := ioutil.ReadFile(bookingFile)
+		file, _ := os.ReadFile(bookingFile)
 		json.Unmarshal(file, &v)
 	}
 	if v.Version != AppVersion {
@@ -363,7 +349,7 @@ func Upgrade() {
 		//Upgrade finished Write the new version number
 		v.Version = AppVersion
 		json_to_file, _ := json.Marshal(v)
-		ioutil.WriteFile(versionFile, json_to_file, 0755)
+		os.WriteFile(versionFile, json_to_file, 0755)
 	}
 }
 
@@ -380,7 +366,7 @@ func updateTimeZone() {
 	}
 }
 
-//Read and set settings
+// Read and set settings
 func Init() {
 	setEnvValue("JSONTEAM", &jsonTeam)
 	setEnvValue("JSONPWD", &jsonPwd)
@@ -464,7 +450,7 @@ func Init() {
 	log.Info(AppName + " v" + AppVersion)
 }
 
-//Logout for the specified booking
+// Logout for the specified booking
 func logout(booking *BookingInterface) error {
 	//Just check if we have a session
 	if booking.Cookies != nil {
@@ -483,10 +469,16 @@ func logout(booking *BookingInterface) error {
 
 func session(booking *BookingInterface) error {
 	//We use the textUrl and guiUrl to get the session cookie
-	response, _ := http.Get(textUrl + "?clubname=" + clubId + "&variant=")
+	response, err := http.Get(textUrl + "?clubname=" + clubId + "&variant=")
+	if err != nil {
+		return err
+	}
 	defer response.Body.Close()
 	booking.Cookies = response.Cookies()
-	response, _ = http.Get(guiUrl + "?clubname=" + clubId + "&variant=")
+	response, err = http.Get(guiUrl + "?clubname=" + clubId + "&variant=")
+	if err != nil {
+		return err
+	}
 	defer response.Body.Close()
 	booking.Cookies = append(booking.Cookies, response.Cookies()...)
 
@@ -496,7 +488,10 @@ func session(booking *BookingInterface) error {
 		request.AddCookie(o)
 	}
 	client := &http.Client{}
-	response, _ = client.Do(request)
+	response, err = client.Do(request)
+	if err != nil {
+		return err
+	}
 	defer response.Body.Close()
 	b, _ := io.ReadAll(response.Body)
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(string(b)))
@@ -531,7 +526,7 @@ func session(booking *BookingInterface) error {
 	return nil
 }
 
-//Login for the specified booking and save the required cookie
+// Login for the specified booking and save the required cookie
 func login(booking *BookingInterface) error {
 	random := fmt.Sprint(time.Now().Nanosecond())
 	if err := session(booking); err != nil {
@@ -633,7 +628,7 @@ func login(booking *BookingInterface) error {
 
 }
 
-//Cancel a booking
+// Cancel a booking
 func boatCancel(booking *BookingInterface) error {
 	var err error
 	//STEP: Create Reference to the booking
@@ -690,13 +685,13 @@ func boatCancel(booking *BookingInterface) error {
 	return err
 }
 
-//Confirm a booking
+// Confirm a booking
 func confirmBoat(booking *BookingInterface) error {
 	log.Error("Confirm Boat not implemented")
 	return nil
 }
 
-//Update a boat booking start and end time
+// Update a boat booking start and end time
 func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
 	//STEP: Session
 	booking.BookingId = ""
@@ -768,7 +763,7 @@ func boatBook(booking *BookingInterface, startTime int64, endTime int64) error {
 	return nil
 }
 
-//Update a boat booking start and end time
+// Update a boat booking start and end time
 func boatUpdate(booking *BookingInterface, startTime int64, endTime int64) error {
 
 	//STEP: Create Reference to the booking
@@ -873,7 +868,7 @@ func guiAction(booking *BookingInterface, action string) (string, error) {
 	return string(bd), nil
 }
 
-//Read the boat list and create it if not found
+// Read the boat list and create it if not found
 func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct) {
 	var blist []string
 	var fs os.FileInfo
@@ -978,10 +973,10 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 				json_to_file, _ := json.Marshal(boats)
 				mutex.Lock()
 				if book != nil {
-					err = ioutil.WriteFile(boatFile, json_to_file, 0755)
+					os.WriteFile(boatFile, json_to_file, 0755)
 				}
 				json_to_file, _ = json.Marshal(blist)
-				err = ioutil.WriteFile(boatNameFile, json_to_file, 0755)
+				os.WriteFile(boatNameFile, json_to_file, 0755)
 				mutex.Unlock()
 
 			}
@@ -992,7 +987,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 		return blist, boats
 	}
 
-	file, err := ioutil.ReadFile(boatNameFile)
+	file, err := os.ReadFile(boatNameFile)
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -1001,7 +996,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 			log.Error(err)
 		}
 	}
-	file, err = ioutil.ReadFile(boatFile)
+	file, err = os.ReadFile(boatFile)
 	if err == nil {
 		err = json.Unmarshal(file, &boats)
 		if err != nil {
@@ -1011,7 +1006,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 	return blist, boats
 }
 
-//Read the  user info
+// Read the  user info
 func readWhatsAppJson() []WhatsAppToInterface {
 	var b []WhatsAppToInterface
 	var u WhatsAppToInterface = WhatsAppToInterface{To: "?"}
@@ -1019,7 +1014,7 @@ func readWhatsAppJson() []WhatsAppToInterface {
 	if _, err := os.Stat(whatsAppFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
-	file, err := ioutil.ReadFile(whatsAppFile)
+	file, err := os.ReadFile(whatsAppFile)
 	if err == nil {
 		err = json.Unmarshal(file, &b)
 		if err != nil {
@@ -1029,7 +1024,7 @@ func readWhatsAppJson() []WhatsAppToInterface {
 	return b
 }
 
-//Write the user info to file
+// Write the user info to file
 func writeWhatsAppJson(data []WhatsAppToInterface) {
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].To == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
@@ -1038,14 +1033,14 @@ func writeWhatsAppJson(data []WhatsAppToInterface) {
 	}
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
-	err := ioutil.WriteFile(whatsAppFile, json_to_file, 0755)
+	err := os.WriteFile(whatsAppFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
 		log.Error(err)
 	}
 }
 
-//Read the  group info
+// Read the  group info
 func readTeamJson() []TeamInterface {
 	var b []TeamInterface
 	if jsonProtect {
@@ -1054,7 +1049,7 @@ func readTeamJson() []TeamInterface {
 	if _, err := os.Stat(teamFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
-	file, err := ioutil.ReadFile(teamFile)
+	file, err := os.ReadFile(teamFile)
 	if err == nil {
 		err = json.Unmarshal(file, &b)
 		if err != nil {
@@ -1064,18 +1059,18 @@ func readTeamJson() []TeamInterface {
 	return b
 }
 
-//Write the group info to file
+// Write the group info to file
 func writeTeamJson(data []TeamInterface) {
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
-	err := ioutil.WriteFile(teamFile, json_to_file, 0755)
+	err := os.WriteFile(teamFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
 		log.Error(err)
 	}
 }
 
-//Read the  user info
+// Read the  user info
 func readUsersJson() []UserInterface {
 	var b []UserInterface
 	var u UserInterface = UserInterface{Username: "?", Password: "?"}
@@ -1083,7 +1078,7 @@ func readUsersJson() []UserInterface {
 	if _, err := os.Stat(userFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
-	file, err := ioutil.ReadFile(userFile)
+	file, err := os.ReadFile(userFile)
 	if err == nil {
 		err = json.Unmarshal(file, &b)
 		if err != nil {
@@ -1093,7 +1088,7 @@ func readUsersJson() []UserInterface {
 	return b
 }
 
-//Write the user info to file
+// Write the user info to file
 func writeUsersJson(data []UserInterface) {
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].Username == "?" || data[i].LastUsed < time.Now().Add(-30*24*time.Hour).Unix() {
@@ -1102,21 +1097,21 @@ func writeUsersJson(data []UserInterface) {
 	}
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
-	err := ioutil.WriteFile(userFile, json_to_file, 0755)
+	err := os.WriteFile(userFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-//Read the booking informatio
+// Read the booking informatio
 func readBookingJson() BookingSlice {
 	b := BookingSlice{}
 	if _, err := os.Stat(bookingFile); errors.Is(err, os.ErrNotExist) {
 		return b
 	}
 	mutex.Lock()
-	file, err := ioutil.ReadFile(bookingFile)
+	file, err := os.ReadFile(bookingFile)
 	mutex.Unlock()
 	if err != nil {
 		log.Error(err)
@@ -1129,7 +1124,7 @@ func readBookingJson() BookingSlice {
 				writeBookingJson(b)
 			} else {
 				mutex.Lock()
-				file, _ = ioutil.ReadFile(bookingFile + ".bak")
+				file, _ = os.ReadFile(bookingFile + ".bak")
 				mutex.Unlock()
 				err = json.Unmarshal(file, &b)
 				if err != nil {
@@ -1141,7 +1136,7 @@ func readBookingJson() BookingSlice {
 	return b
 }
 
-//Write the data to the booking file, removing expired data
+// Write the data to the booking file, removing expired data
 func writeBookingJson(data BookingSlice) {
 	for i := len(data) - 1; i >= 0; i-- {
 		if data[i].State == "Delete" {
@@ -1159,14 +1154,14 @@ func writeBookingJson(data BookingSlice) {
 	json_to_file, _ := json.Marshal(data)
 	mutex.Lock()
 	os.Rename(bookingFile, bookingFile+".bak")
-	err := ioutil.WriteFile(bookingFile, json_to_file, 0755)
+	err := os.WriteFile(bookingFile, json_to_file, 0755)
 	mutex.Unlock()
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-//Function where al checks are done for a single booking and make the booking
+// Function where al checks are done for a single booking and make the booking
 func doBooking(b *BookingInterface) (changed bool, err error) {
 
 	//Check thif booking should be canceled
@@ -1366,7 +1361,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 
 }
 
-//The main loop in which we do all the booking processing
+// The main loop in which we do all the booking processing
 func bookLoop() {
 	log.Info("Start processing")
 	var changed bool = false
@@ -1586,7 +1581,7 @@ func bookLoop() {
 	}
 }
 
-//Indicate which CORS sites are allowed
+// Indicate which CORS sites are allowed
 func allowOrigin(origin string) (bool, error) {
 	// In this example we use a regular expression but we can imagine various
 	// kind of custom logic. For example, an external datasource could be used
@@ -1594,7 +1589,7 @@ func allowOrigin(origin string) (bool, error) {
 	return true, nil //regexp.MatchString(`^https:\/\/spaarne\.(\w).(\w)$`, origin)
 }
 
-//Function to create log entry
+// Function to create log entry
 func makeLogEntry(c echo.Context) *log.Entry {
 	if c == nil {
 		return log.WithFields(log.Fields{
@@ -1610,7 +1605,7 @@ func makeLogEntry(c echo.Context) *log.Entry {
 	})
 }
 
-//Middleware logging services
+// Middleware logging services
 func middlewareLogging(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		makeLogEntry(c).Debug("incoming request")
@@ -1618,7 +1613,7 @@ func middlewareLogging(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-//Error handler for JsonSer er
+// Error handler for JsonSer er
 func errorHandler(err error, c echo.Context) {
 	report, ok := err.(*echo.HTTPError)
 	if ok {
@@ -1671,7 +1666,7 @@ func getTeamByContext(c echo.Context) (*TeamInterface, error) {
 	return &gt, errors.New("invalid Authorization Header")
 }
 
-//The basic web server
+// The basic web server
 func jsonServer() error {
 	e := echo.New()
 	e.HideBanner = true
@@ -2063,7 +2058,6 @@ func jsonServer() error {
 				//Do whe have a updated using user comment
 				updated_booking.UserComment = booking.UserComment ||
 					booking.Comment != updated_booking.Comment
-				updated_booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), State: booking.State, Log: "Update by " + team.Title})
 
 				//Cancel a Boat when you update it, while it is finished
 				if (booking.State == "Finished" || booking.State == "Confirmed") &&
@@ -2071,6 +2065,9 @@ func jsonServer() error {
 						booking.Duration != updated_booking.Duration ||
 						booking.Name != updated_booking.Name) {
 					boatCancel(&booking)
+					updated_booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), State: booking.State, Log: "Canceled to update by " + team.Title})
+				} else {
+					updated_booking.Logs = append(booking.Logs, LogStruct{Date: time.Now().Unix(), Log: "Updated by " + team.Title})
 				}
 				bookings = append(bookings, *updated_booking)
 				writeBookingJson(bookings)
@@ -2383,7 +2380,7 @@ func jsonServer() error {
 	return e.Start(bindAddress)
 }
 
-//Whatsapp logger stuff
+// Whatsapp logger stuff
 type stdoutLogger struct{}
 
 func (s *stdoutLogger) Errorf(msg string, args ...interface{}) { log.Errorf(msg, args...) }
@@ -2392,7 +2389,7 @@ func (s *stdoutLogger) Infof(msg string, args ...interface{})  { log.Infof(msg, 
 func (s *stdoutLogger) Debugf(msg string, args ...interface{}) { log.Debugf(msg, args...) }
 func (s *stdoutLogger) Sub(_ string) waLog.Logger              { return s }
 
-//Send a whatsapp message
+// Send a whatsapp message
 func sendWhatsApp(teamName string, name string, msg string) {
 	if !whatsApp {
 		log.Error("Trying to send WhatsApp message when disabled")
@@ -2488,7 +2485,7 @@ func main() {
 		log.Info("WhatsApp enabled")
 	}
 	//Catch shutdown
-	c := make(chan os.Signal)
+	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-c
