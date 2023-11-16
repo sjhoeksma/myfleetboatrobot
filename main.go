@@ -42,7 +42,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.7.0"                      //The version of application
+var AppVersion = "0.7.1"                      //The version of application
 var AppName = "MyFleetRobot"                  //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -926,10 +926,10 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 					Y  int     `json:"y"`
 					X  float64 `json:"x"`
 					I  int     `json:"i"`
-					R  int     `json:"r"`
+					R  string  `json:"r"`
 					W  float64 `json:"w"`
 					U  string  `json:"u"`
-					O  int     `json:"o"`
+					O  string  `json:"o"`
 					C  string  `json:"c"`
 					ID string  `json:"id"`
 				} `json:"r"`
