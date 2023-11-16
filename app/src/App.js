@@ -1018,7 +1018,7 @@ export default function App() {
             }}
           >
             {<div dangerouslySetInnerHTML={{ __html: out }} />}
-            <div>{new Date(rowData.next*1000).toISOString()} Next update</div>
+            <div>{rowData.next ? new Date(rowData.next*1000).toISOString() + " Next update":"" }</div>
           </div>
           )
         }}
