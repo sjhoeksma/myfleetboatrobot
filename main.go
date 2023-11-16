@@ -1269,7 +1269,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			if sunrise == 0 || sunset == math.MaxInt64 {
 				b.Message = "Date not valid yet"
 				b.State = "Waiting"
-				b.EpochNext = time.Unix(starttime, 0).Truncate(15 * time.Minute).Unix()
+				b.EpochNext = time.Unix(b.EpochDate, 0).Unix()
 				return true, nil
 			}
 
@@ -1284,7 +1284,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			if time.Unix(sunset, 0).Add(-time.Duration(minDuration)*time.Minute).Unix() < sunrise {
 				b.Message = "Starttime not valid yet"
 				b.State = "Waiting"
-				b.EpochNext = time.Unix(sunrise, 0).Add(-(time.Duration(bookWindow)*time.Hour - time.Duration(minDuration)*time.Minute)).Truncate(15 * time.Minute).Add(-time.Duration(refreshInterval) * time.Second).Unix()
+				b.EpochNext = time.Unix(sunrise, 0).Add(time.Duration(minDuration) * time.Minute).Truncate(15 * time.Minute).Unix()
 				return true, nil
 			}
 
@@ -1292,7 +1292,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			if endtime-starttime < int64(minDuration*60) {
 				b.Message = "Available duration, <" + strconv.FormatInt(int64(minDuration), 10) + "min"
 				b.State = "Waiting"
-				b.EpochNext = time.Now().Unix() - (endtime - starttime)
+				b.EpochNext = time.Unix(sunrise, 0).Add(time.Duration(minDuration) * time.Minute).Truncate(15 * time.Minute).Unix()
 				return true, nil
 			}
 
