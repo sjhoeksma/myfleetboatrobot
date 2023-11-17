@@ -913,25 +913,25 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 			/* Parse the boat list*/
 			type BoatStruct []struct {
 				M struct {
-					P        string   `json:"p"`
-					BoatId   int      `json:"i"`
-					R        string   `json:"r"`
-					A        string   `json:"a"`
-					B        string   `json:"b"`
+					//	P        string   `json:"p"`
+					BoatId int `json:"i"`
+					//	R        string   `json:"r"`
+					//	A        string   `json:"a"`
+					//	B        string   `json:"b"`
 					BoatInfo []string `json:"c"` //  [name,type,location,weigth,spacer,permision]
 				} `json:"m"`
 				R []struct {
-					P  string  `json:"p"`
-					S  string  `json:"s"`
-					Y  int     `json:"y"`
-					X  float64 `json:"x"`
-					I  int     `json:"i"`
-					R  string  `json:"r"`
-					W  float64 `json:"w"`
-					U  string  `json:"u"`
-					O  string  `json:"o"`
-					C  string  `json:"c"`
-					ID string  `json:"id"`
+					P string `json:"p"`
+					S string `json:"s"`
+					//Y int     `json:"y"`
+					X float64 `json:"x"`
+					I int     `json:"i"`
+					//R  string  `json:"r"`
+					W float64 `json:"w"`
+					U string  `json:"u"`
+					//O  string  `json:"o"`
+					C  string `json:"c"`
+					ID string `json:"id"`
 				} `json:"r"`
 			}
 			webboats := BoatStruct{}
