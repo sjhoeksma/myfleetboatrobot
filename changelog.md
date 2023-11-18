@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved fully to GUI client
 - Added logging to GUI
 - Optimized waiting
+- Changed name to MyBoats
 
 ## [0.6.2]
 ### Added

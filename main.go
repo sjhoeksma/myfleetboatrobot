@@ -43,7 +43,7 @@ import (
 )
 
 var AppVersion = "0.7.2"                      //The version of application
-var AppName = "MyFleet"                       //The Application name
+var AppName = "MyBoats"                       //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
 const dbPath = "db/"                          //The location where datafiles are stored
