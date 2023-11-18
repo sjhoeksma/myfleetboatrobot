@@ -42,8 +42,8 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.7.1"                      //The version of application
-var AppName = "MyFleetRobot"                  //The Application name
+var AppVersion = "0.7.2"                      //The version of application
+var AppName = "MyFleet"                       //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
 const dbPath = "db/"                          //The location where datafiles are stored
@@ -1207,6 +1207,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			var sunrise int64 = 0            //EpochData is good enough for Sunrise
 			var sunset int64 = math.MaxInt64 //EpochEnd is good enough for Sunset
 			var sunsetWindow int64 = sunset
+			var sunriseWindow int64 = sunrise
 			//Find the allowed sunset and sunrise for the given date of booking by going through de blocks
 			for _, bb := range bs.Bookings { //Find the bookings of the boot
 				//Check all sunset blocked area's for booking data to find allowed bookings window
@@ -1217,6 +1218,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					}
 					if bb.EpochEnd < b.EpochStart {
 						sunrise = MaxInt64(sunrise, bb.EpochEnd)
+						sunriseWindow = sunrise
 					}
 					//log.Info("S ", b.EpochDate, " SunRise ", sunrise, " SunSet ", sunset, " Start ", bb.EpochStart, " End ", bb.EpochEnd)
 				}
@@ -1269,7 +1271,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			if sunrise == 0 || sunset == math.MaxInt64 {
 				b.Message = "Date not valid yet"
 				b.State = "Waiting"
-				b.EpochNext = time.Unix(b.EpochDate, 0).Add(-time.Duration(bookWindow) * time.Hour).Truncate(15 * time.Minute).Unix()
+				b.EpochNext = time.Unix(MaxInt64(b.EpochDate, sunriseWindow), 0).Add(-time.Duration(bookWindow) * time.Hour).Truncate(15 * time.Minute).Unix()
 				return true, nil
 			}
 

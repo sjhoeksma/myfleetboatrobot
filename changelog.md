@@ -13,25 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add Planner Team - Planner Dates base on flag planner
 - Add PlanLogic
 - Change booking using the user dropdown instead of username password
-- Add Fallback, table by Prio,...BootType and then by type the boat in Row
-- Fixtime zone during winter/summer
-- Add option to show de log belonging to a booking
-
-- Fix issue to use correct start date
-- Logging laat niet de namen zien van de gebruikers in de boatList
+- Add opening log for admin user
 
 ## [Development]
 ### Added
 ### Changed
 ### Removed
 
-## [0.7.0]
+## [0.7.2]
 - Fixed issued with login, when not using commandline parameters
 - Fixed issue with timezone logging
 - Added Fallback
 - Updated Go version
-- Disabled confirmation by default, not working yet
+- Disabled confirmation by default, not working yet only in clubhous
 - Moved fully to GUI client
+- Added logging to GUI
+- Optimized waiting
 
 ## [0.6.2]
 ### Added

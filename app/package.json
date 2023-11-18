@@ -1,6 +1,6 @@
 {
-  "name": "myfleetrobot",
-  "version": "0.7.0",
+  "name": "myfleet",
+  "version": "0.7.2",
   "private": true,
   "dependencies": {
     "@material-ui/core": "^4.11.3",
