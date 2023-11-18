@@ -1263,7 +1263,7 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 			if sunrise == 0 || sunset == math.MaxInt64 {
 				b.Message = "Date not valid yet"
 				b.State = "Waiting"
-				b.EpochNext = time.Unix(MaxInt64(b.EpochDate, sunriseWindow), 0).Add(-time.Duration(bookWindow) * time.Hour).Truncate(15 * time.Minute).Unix()
+				b.EpochNext = time.Unix(MaxInt64(b.EpochDate, sunriseWindow), 0).Add(-time.Duration(bookWindow) * time.Hour).Add(time.Duration(minDuration) * time.Minute).Truncate(15 * time.Minute).Unix()
 				return true, nil
 			}
 
