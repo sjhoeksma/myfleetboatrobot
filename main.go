@@ -913,25 +913,17 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 			/* Parse the boat list*/
 			type BoatStruct []struct {
 				M struct {
-					//	P        string   `json:"p"`
-					BoatId int `json:"i"`
-					//	R        string   `json:"r"`
-					//	A        string   `json:"a"`
-					//	B        string   `json:"b"`
+					BoatId   int      `json:"i"`
 					BoatInfo []string `json:"c"` //  [name,type,location,weigth,spacer,permision]
 				} `json:"m"`
 				R []struct {
-					P string `json:"p"`
-					S string `json:"s"`
-					//Y int     `json:"y"`
-					X float64 `json:"x"`
-					I int     `json:"i"`
-					//R  string  `json:"r"`
-					W float64 `json:"w"`
-					U string  `json:"u"`
-					//O  string  `json:"o"`
-					C  string `json:"c"`
-					ID string `json:"id"`
+					P  string  `json:"p"`
+					S  string  `json:"s"`
+					X  float64 `json:"x"`
+					W  float64 `json:"w"`
+					U  string  `json:"u"`
+					C  string  `json:"c"`
+					ID string  `json:"id"`
 				} `json:"r"`
 			}
 			webboats := BoatStruct{}
@@ -955,7 +947,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 						if (bb.S == "B" || bb.S == "R") && bb.W > 0 {
 							//The color code indicaties a window not available
 							bbb := BoatElementBookingStruct{
-								Type:        cif(bb.C == "#404040", "N", cif(bb.I == -1, "S", bb.S)),
+								Type:        cif(bb.C == "#404040", "N", cif(bb.ID == "", "S", bb.S)),
 								EpochStart:  epochStart + int64((bb.X/pixelToMin)*(15*60)),
 								EpochEnd:    epochStart + int64((bb.X+bb.W)/pixelToMin)*(15*60),
 								Duration:    int64(bb.W/pixelToMin) * 15,
