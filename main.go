@@ -879,6 +879,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 	if book == nil {
 		booking = &BookingInterface{}
 		if err := session(booking); err != nil {
+			log.Error("Read boat no booking", err)
 			return blist, boats
 		}
 		fs, err = os.Stat(boatNameFile)
@@ -928,7 +929,7 @@ func readBoatJson(book *BookingInterface, maxAge int) ([]string, BoatListStruct)
 			}
 			webboats := BoatStruct{}
 			err := json.Unmarshal([]byte(rem[1]), &webboats)
-			if err != nil {
+			if err == nil {
 				blist = []string{}
 				re = regexp.MustCompile(`var grid_width = (.*);`)
 				rem = re.FindStringSubmatch(str)
@@ -1457,7 +1458,7 @@ func bookLoop() {
 
 				//Check if have allready processed the booking, if so skip it
 				if booking.State == "Finished" || booking.State == "Confirmed" || booking.State == "Canceled" ||
-					booking.State == "Failed" || booking.State == "Blocked" || booking.EpochNext > time.Now().Unix() {
+					booking.State == "Failed" || booking.EpochNext > time.Now().Unix() {
 					//Check if we should repeat this item
 					if booking.Repeat != None && booking.EpochEnd < time.Now().Unix() {
 						booking.State = "Repeat"
@@ -1492,7 +1493,6 @@ func bookLoop() {
 				}
 
 				// doBooking
-
 				//Step 1: Login
 				err = login(booking)
 				if err != nil {
@@ -1503,13 +1503,20 @@ func bookLoop() {
 				//Step 2: Read all boat data if older than 60 seconds
 				_, boats := readBoatJson(booking, 60)
 				booking.Boats = &boats
-
-				//Step 3: Do the real Booking
-				booking.Changed, err = doBooking(booking)
-				if err != nil {
-					booking.State = "Failed"
-					booking.Message = err.Error()
+				if len(boats) == 0 {
+					log.Error("ReadBoatJson returned empty list")
+					readBoatJson(booking, 0) //Fore a reload before retrying
+					booking.State = "Retry"
+					booking.Message = "Boat list empty"
 					booking.Changed = true
+				} else {
+					//Step 3: Do the real Booking
+					booking.Changed, err = doBooking(booking)
+					if err != nil {
+						booking.State = "Failed"
+						booking.Message = err.Error()
+						booking.Changed = true
+					}
 				}
 
 				//Step 4: Logout
