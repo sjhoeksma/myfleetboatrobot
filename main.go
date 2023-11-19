@@ -68,6 +68,7 @@ var logFile string                            //Should we log to file
 var whatsApp bool = true                      //Should we enable watchapp
 var planner bool = false                      //Should we enable planner
 var addTime bool = false                      //Should we add time comment
+var sleepOffset int = 0                       //Time in seconds we use as sleep offset
 
 // Used to map specify when to send a whatsapp message
 var sendWhatsAppMsg = map[string]bool{
@@ -388,6 +389,7 @@ func Init() {
 	flag.IntVar(&bookWindow, "bookWindow", bookWindow, "The interval in hours for allowed bookings")
 	flag.IntVar(&maxRetry, "maxRetry", maxRetry, "The maximum retry's before failing, 0=disabled")
 	flag.IntVar(&confirmTime, "confirmTime", confirmTime, "The time before confirming, 0=disabled")
+	flag.IntVar(&sleepOffset, "sleepOffset", sleepOffset, "The time used as sleepoffset")
 	flag.StringVar(&bindAddress, "bind", bindAddress, "The bind address to be used for webserver")
 	flag.StringVar(&jsonTeam, "jsonTeam", jsonTeam, "The team name to protect jsondata")
 	flag.StringVar(&jsonPwd, "jsonPwd", jsonPwd, "The password to protect jsondata")
@@ -1579,7 +1581,8 @@ func bookLoop() {
 		//Get the local time zone
 		updateTimeZone()
 		//We sleep before we restart, where we align as close as possible to interval
-		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Second).Round(time.Duration(refreshInterval)*time.Second).Unix()-time.Now().Unix()) * time.Second)
+		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Second).Round(time.Duration(refreshInterval)*time.Second).Unix()-time.Now().
+			Add(time.Duration(sleepOffset)*time.Second).Unix()) * time.Second)
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }
