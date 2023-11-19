@@ -66,7 +66,8 @@ var refreshInterval int = 1                   //We do a check of the database ev
 var logLevel string = "Info"                  //Default loglevel is info
 var logFile string                            //Should we log to file
 var whatsApp bool = true                      //Should we enable watchapp
-var planner bool = true                       //Should we enable planner
+var planner bool = false                      //Should we enable planner
+var addTime bool = false                      //Should we add time comment
 
 // Used to map specify when to send a whatsapp message
 var sendWhatsAppMsg = map[string]bool{
@@ -397,6 +398,7 @@ func Init() {
 	flag.StringVar(&logFile, "logFile", logFile, "The logFile where we should write log information to")
 	flag.BoolVar(&whatsApp, "whatsApp", whatsApp, "Should we use WhatsApp to send a message")
 	flag.BoolVar(&planner, "planner", planner, "Should we use planner")
+	flag.BoolVar(&addTime, "addTime", planner, "Should we enable AddTime")
 	flag.StringVar(&test, "test", test, "The test action to perform")
 
 	flag.Parse() // after declaring flags we need to call it
@@ -1712,6 +1714,7 @@ func jsonServer() error {
 			"whatsappto":     g.WhatsAppTo,
 			"authRequired":   jsonProtect,
 			"planner":        g.Planner && planner,
+			"addTime":        addTime,
 		}
 		return c.JSON(http.StatusOK, configData)
 	})
