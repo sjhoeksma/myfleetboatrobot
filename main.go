@@ -42,7 +42,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.7.2"                      //The version of application
+var AppVersion = "0.7.3"                      //The version of application
 var AppName = "MyBoats"                       //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -61,7 +61,7 @@ var minDuration = 60                          //The minimal duration required to
 var maxDuration = 120                         //The maximal duration allowed to book
 var bookWindow = 48                           //The number of hours allowed to book
 var confirmTime = 0                           //Time in Min before before starting time to confirm booking, 0=Disabled
-var maxRetry int = 100                        //The maximum numbers of retry before we give up, 0=disabled
+var maxRetry int = 10                         //The maximum numbers of retry before we give up, 0=disabled
 var refreshInterval int = 1                   //We do a check of the database every 1 minute
 var logLevel string = "Info"                  //Default loglevel is info
 var logFile string                            //Should we log to file
@@ -1379,9 +1379,17 @@ func bookLoop() {
 					//If data has been changed update the booking array
 					if booking.Changed {
 						*changed = true
+						if booking.State == "Retry" {
+							booking.EpochNext = 0 //On Retry Item we will not wait
+							booking.Retry++
+							if maxRetry == 0 || booking.Retry > maxRetry {
+								booking.State = "Blocked"
+							}
+						}
 						//Sleep the booking for at least 15 min, if we are not instructed to skip
-						if booking.State == "Blocked" || booking.State == "Retry" {
-							booking.EpochNext = 0 //On blocked or Retry Item we will not wait
+						if booking.State == "Blocked" {
+							booking.EpochNext = 0 //On Blocked  Item we will not wait
+							booking.Retry = 0
 						} else if booking.EpochNext <= time.Now().Unix() {
 							booking.EpochNext = MaxInt64(booking.EpochNext, time.Now().Add(15*time.Minute).Truncate(15*time.Minute).Unix())
 						}
@@ -1517,9 +1525,13 @@ func bookLoop() {
 					//Step 3: Do the real Booking
 					booking.Changed, err = doBooking(booking)
 					if err != nil {
-						booking.State = "Failed"
-						booking.Message = err.Error()
-						booking.Changed = true
+						if maxRetry != 0 {
+							booking.State = "Retry"
+						} else {
+							booking.State = "Blocked"
+							booking.Message = err.Error()
+							booking.Changed = true
+						}
 					}
 				}
 
