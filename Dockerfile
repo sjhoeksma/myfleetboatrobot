@@ -19,7 +19,7 @@ RUN npm run build
 ##
 ## Build MyFleet Robot (SERVER)
 ##
-FROM golang:1.21-alpine AS SERVER
+FROM golang:latest AS SERVER
 #GCC is required by SQLLite3
 RUN apk add --no-cache build-base
 WORKDIR /app
