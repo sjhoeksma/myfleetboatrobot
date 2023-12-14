@@ -21,7 +21,7 @@ RUN npm run build
 ##
 FROM golang:latest AS SERVER
 #GCC is required by SQLLite3
-RUN apk add --no-cache build-base
+#RUN apk add --no-cache build-base
 WORKDIR /app
 
 COPY go.mod ./
