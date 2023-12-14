@@ -19,7 +19,7 @@ RUN npm run build
 ##
 ## Build MyFleet Robot (SERVER)
 ##
-FROM go:alpine3.18 AS SERVER
+FROM golang:alpine3.18 AS SERVER
 #GCC is required by SQLLite3
 RUN apk add --no-cache build-base
 WORKDIR /app
@@ -35,7 +35,8 @@ RUN go build -v -o server
 ###
 ## Deploy using minimal apline image
 ##
-FROM alpine:latest 
+FROM alpine:3.18
+## FROM alpine:latest 
 #Timzeone package is required by Server
 RUN apk add --no-cache tzdata
 WORKDIR /app
