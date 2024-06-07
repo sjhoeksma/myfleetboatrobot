@@ -42,7 +42,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var AppVersion = "0.7.3"                      //The version of application
+var AppVersion = "0.7.4"                      //The version of application
 var AppName = "MyBoats"                       //The Application name
 var myFleetVersion = "R1B34"                  //The software version of myFleet
 var clubId = "rvs"                            //The club code
@@ -1259,9 +1259,14 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 				}
 			}
 
+			var endtime int64
+			var starttime int64
+
+			//TODO: sunrisewindow should be used if we are within 60 Seconds
+
 			//Calculate the minimal start and end time
-			endtime := MinInt64(sunset, b.EpochEnd)
-			starttime := MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
+			endtime = MinInt64(sunset, b.EpochEnd)
+			starttime = MinInt64(b.EpochStart, MinInt64(b.EpochStart, endtime-int64(minDuration)*60))
 			starttime = MaxInt64(starttime, sunrise)
 
 			//Check if there is a timeslot for book
@@ -1324,6 +1329,8 @@ func doBooking(b *BookingInterface) (changed bool, err error) {
 					return false, nil
 				}
 			}
+
+			//TODO: Sleep till sunrisewindow
 
 			//Get the boat ID and start the booking process
 			b.BoatId = strconv.Itoa(bs.Id)
@@ -1593,8 +1600,19 @@ func bookLoop() {
 		//Get the local time zone
 		updateTimeZone()
 		//We sleep before we restart, where we align as close as possible to interval
-		time.Sleep(time.Duration(time.Now().Add(time.Duration(refreshInterval)*time.Second).Round(time.Duration(refreshInterval)*time.Second).Unix()-time.Now().
-			Add(time.Duration(sleepOffset)*time.Second).Unix()) * time.Second)
+		var sleep int64 = math.MaxInt64
+		//We loop through all bookings to check if we should sleep at all
+		for _, booking := range bookingSlice {
+			if booking.EpochNext <= 0 {
+				sleep = 0
+				break
+			}
+		}
+		if sleep == math.MaxInt64 {
+			sleep = time.Now().Add(time.Duration(refreshInterval)*time.Second).Round(time.Duration(refreshInterval)*time.Second).Unix() - time.Now().
+				Add(time.Duration(sleepOffset)*time.Second).Unix()
+			time.Sleep(time.Duration(sleep) * time.Second)
+		}
 		//log.Println("Awake from Sleep", refreshInterval)
 	}
 }

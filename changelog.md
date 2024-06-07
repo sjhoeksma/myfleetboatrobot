@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
+## [0.7.4]
+- No sleep when nextepoch is zero
+- Wait till exact time for book moment
+
+## [0.7.3]
+- Fixed build issue docker files
+- Fixed issue with booking failuere not retry and failing over
+
 ## [0.7.2]
 - Fixed issued with login, when not using commandline parameters
 - Fixed issue with timezone logging
